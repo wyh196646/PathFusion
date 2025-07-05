@@ -1,0 +1,12 @@
+add_metrics:
+- qwk
+label_dict:
+  T1c: 0
+  T2: 1
+  T3: 2
+  # T4: 0
+  # T4b: 5
+max_tiles: 4000
+name: TCGA-BRCA_T
+setting: multi_class
+shuffle_tiles: true

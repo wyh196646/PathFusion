@@ -1,0 +1,9 @@
+add_metrics:
+- qwk
+label_dict:
+  0: 0
+  1: 1
+max_tiles: 4000
+name: IMPRESS_PCR
+setting: multi_class
+shuffle_tiles: true

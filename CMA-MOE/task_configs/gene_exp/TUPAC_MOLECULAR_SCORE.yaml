@@ -1,0 +1,7 @@
+name: TUPAC_MOLECULAR_SCORE
+setting: regression
+label_dict:
+      'molecular_score' : 0
+max_tiles: 4000
+shuffle_tiles: true
+add_metrics: ['qwk']

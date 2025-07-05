@@ -1,0 +1,9 @@
+add_metrics:
+- qwk
+label_dict:
+  Negative: 1
+  Positive: 0
+max_tiles: 4000
+name: BCNB_ER
+setting: multi_class
+shuffle_tiles: true

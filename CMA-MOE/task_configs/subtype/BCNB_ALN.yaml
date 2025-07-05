@@ -1,0 +1,10 @@
+add_metrics:
+- qwk
+label_dict:
+  N+(1-2): 2
+  N+(>2): 1
+  N0: 0
+max_tiles: 4000
+name: BCNB_ALN
+setting: multi_class
+shuffle_tiles: true

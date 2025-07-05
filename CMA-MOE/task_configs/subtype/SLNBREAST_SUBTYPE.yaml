@@ -1,0 +1,9 @@
+add_metrics:
+- qwk
+label_dict:
+  negative: 1
+  positive: 0
+max_tiles: 4000
+name: SLNBREAST_SUBTYPE
+setting: multi_class
+shuffle_tiles: true

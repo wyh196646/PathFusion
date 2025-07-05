@@ -1,0 +1,10 @@
+add_metrics:
+- qwk
+label_dict:
+  1: 0
+  2: 1
+  3: 2
+max_tiles: 4000
+name: TUPAC_TUMOR_SCORE
+setting: multi_class
+shuffle_tiles: true

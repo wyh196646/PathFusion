@@ -1,0 +1,18 @@
+add_metrics:
+- qwk
+label_dict:
+  2: 5
+  5: 0
+  8: 6
+  10: 2
+  20: 10
+  30: 4
+  40: 9
+  70: 7
+  80: 1
+  90: 8
+  95: 3
+max_tiles: 4000
+name: AIDPATH_KI67PRED
+setting: multi_class
+shuffle_tiles: true

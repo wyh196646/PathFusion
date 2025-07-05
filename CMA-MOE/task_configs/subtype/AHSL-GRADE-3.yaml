@@ -1,0 +1,16 @@
+add_metrics:
+- qwk
+label_dict:
+  Benign-IP: 4
+  #Benign-IP-DCIS: 6
+  DCIS: 1
+  DCIS-MBC: 3
+  #Non-IDC: 5
+  Non-IDC-DCIS: 2
+  #Non-IDC-DCIS-IP: 3
+  #Non-IDC-Fibroadenoma: 1
+  SA: 0
+max_tiles: 4000
+name: AHSL-GRADE-3
+setting: multi_class
+shuffle_tiles: true

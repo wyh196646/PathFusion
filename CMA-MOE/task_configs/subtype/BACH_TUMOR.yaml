@@ -1,0 +1,11 @@
+add_metrics:
+- qwk
+label_dict:
+  Benign: 1
+  InSitu: 2
+  Invasive: 3
+  Normal: 0
+max_tiles: 4000
+name: BACH_TUMOR
+setting: multi_class
+shuffle_tiles: true

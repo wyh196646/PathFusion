@@ -1,0 +1,23 @@
+add_metrics:
+- qwk
+label_dict:
+  N0: 4
+  # N0 (i+): 9
+  N0 (i-): 0
+  # N0 (mol+): 15
+  N1: 3
+  N1a: 1
+  # N1b: 2
+  # N1c: 14
+  # N1mi: 11
+  N2: 5
+  N2a: 2
+  # N3: 10
+  N3a: 6
+  # N3b: 12
+  # N3c: 13
+  # NX: 8
+max_tiles: 4000
+name: TCGA-BRCA_N
+setting: multi_class
+shuffle_tiles: true

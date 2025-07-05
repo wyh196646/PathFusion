@@ -1,0 +1,10 @@
+add_metrics:
+- qwk
+label_dict:
+  equivocal: 1
+  negative: 0
+  positive: 2
+max_tiles: 4000
+name: AIDPATH_CERB2
+setting: multi_class
+shuffle_tiles: true

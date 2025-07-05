@@ -1,0 +1,12 @@
+add_metrics:
+- qwk
+label_dict:
+  Fast death - natural causes: 4
+  Fast death - violent: 2
+  Intermediate death: 3
+  Slow death: 0
+  Ventilator case: 1
+max_tiles: 4000
+name: GTEX_PROG
+setting: multi_class
+shuffle_tiles: true

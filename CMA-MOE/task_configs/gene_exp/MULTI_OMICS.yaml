@@ -1,0 +1,22 @@
+name: MULTI_OMICS
+setting: regression
+label_dict:
+    'T cells': 0
+    'CD8 T cells': 1
+    'Cytotoxic lymphocytes': 2
+    'NK cells': 3
+    'B lineage': 4
+    'Monocytic lineage': 5
+    'Myeloid dendritic cells': 6
+    'Neutrophils': 7
+    'Endothelial cells': 8
+    'Fibroblasts': 9
+    # 'All': 10
+    # 'All2': 11
+    # 'All3': 12
+    # 'All4': 13
+    # 'All5': 14
+    # 'All6': 15
+max_tiles: 4000
+shuffle_tiles: true
+add_metrics: ['qwk']

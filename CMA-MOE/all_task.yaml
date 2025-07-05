@@ -1,0 +1,284 @@
+AHSL-GRADE-1:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/AHSL
+  folds: 1
+  task_cfg: task_configs/subtype/AHSL-GRADE-1.yaml
+AHSL-GRADE-3:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/AHSL
+  task_cfg: task_configs/subtype/AHSL-GRADE-3.yaml
+AHSL-NON-IDC-GRADE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/AHSL
+  task_cfg: task_configs/subtype/AHSL-NON-IDC-GRADE.yaml
+AHSL_SUBTYPE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/AHSL
+  task_cfg: task_configs/subtype/AHSL_SUBTYPE.yaml
+AIDPATH_CERB2:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/AIDPATH
+  task_cfg: task_configs/biomarker/AIDPATH_CERB2.yaml
+AIDPATH_GRADE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/AIDPATH
+  task_cfg: task_configs/subtype/AIDPATH_GRADE.yaml
+AIDPATH_IDC:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/AIDPATH
+  task_cfg: task_configs/subtype/AIDPATH_IDC.yaml
+AIDPATH_KI67PRED:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/AIDPATH
+  task_cfg: task_configs/biomarker/AIDPATH_KI67PRED.yaml
+AIDPATH_RESTR:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/AIDPATH
+  task_cfg: task_configs/biomarker/AIDPATH_RESTR.yaml
+BCNB_ALN:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/BCNB
+  task_cfg: task_configs/subtype/BCNB_ALN.yaml
+BCNB_ER:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/BCNB
+  task_cfg: task_configs/biomarker/BCNB_ER.yaml
+BCNB_HER2:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/BCNB
+  task_cfg: task_configs/biomarker/BCNB_HER2.yaml
+BCNB_PR:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/BCNB
+  task_cfg: task_configs/biomarker/BCNB_PR.yaml
+BCNB_TUMOR:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/BCNB
+  task_cfg: task_configs/subtype/BCNB_TUMOR.yaml
+BRACS_COARSE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/BRACS
+  task_cfg: task_configs/subtype/BRACS_COARSE.yaml
+BRACS_FINE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/BRACS
+  task_cfg: task_configs/subtype/BRACS_FINE.yaml
+CAMELYON16_TEST_CANCER:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/CAMELYON16
+  task_cfg: task_configs/subtype/CAMELYON16_TEST_CANCER.yaml
+CAMELYON16_TEST_IDC:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/CAMELYON16
+  task_cfg: task_configs/subtype/CAMELYON16_TEST_IDC.yaml
+CAMELYON17_STAGE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/CAMELYON17
+  task_cfg: task_configs/subtype/CAMELYON17_STAGE.yaml
+CAMELYON17_STAGE_4SUBTYPING:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/CAMELYON17
+  task_cfg: task_configs/subtype/CAMELYON17_STAGE_4SUBTYPING.yaml
+CPTAC_AJCC8SUBTYPE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/CPTAC
+  folds: 1
+  task_cfg: task_configs/subtype/CPTAC_AJCC8SUBTYPE.yaml
+CPTAC_GENE:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/CPTAC
+  task_cfg: task_configs/gene_exp/CPTAC_GENE.yaml
+CPTAC_IDC:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/CPTAC
+  task_cfg: task_configs/subtype/CPTAC_IDC.yaml
+CPTAC_PROTEIN:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/CPTAC
+  task_cfg: task_configs/gene_exp/CPTAC_PROTEIN.yaml
+DORID_2:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/DORID
+  task_cfg: task_configs/subtype/DORID_2.yaml
+DORID_6:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/DORID
+  task_cfg: task_configs/subtype/DORID_6.yaml
+GTEX_BREASTGENE:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/GTEX_Breast
+  task_cfg: task_configs/gene_exp/GTEX_BREASTGENE.yaml
+GTEX_PROG:
+  csv_dir: dataset_csv/survival
+  embedding_dir: /data4/embedding/GTEX_Breast
+  task_cfg: task_configs/survival/GTEX_PROG.yaml
+IMPRESS_CD163-INTRATUMORAL:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/IMPRESS
+  task_cfg: task_configs/biomarker/IMPRESS_CD163-INTRATUMORAL.yaml
+IMPRESS_CD163-PERITUMORAL:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/IMPRESS
+  task_cfg: task_configs/biomarker/IMPRESS_CD163-PERITUMORAL.yaml
+IMPRESS_CD8-INTRATUMORAL:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/IMPRESS
+  task_cfg: task_configs/biomarker/IMPRESS_CD8-INTRATUMORAL.yaml
+IMPRESS_CD8-PERITUMORAL:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/IMPRESS
+  task_cfg: task_configs/biomarker/IMPRESS_CD8-PERITUMORAL.yaml
+IMPRESS_ER:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/IMPRESS
+  task_cfg: task_configs/biomarker/IMPRESS_ER.yaml
+IMPRESS_PCR:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/IMPRESS
+  task_cfg: task_configs/biomarker/IMPRESS_PCR.yaml
+IMPRESS_PD-L1-STROMA:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/IMPRESS
+  task_cfg: task_configs/biomarker/IMPRESS_PD-L1-STROMA.yaml
+IMPRESS_PD-L1-TUMOR:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/IMPRESS
+  task_cfg: task_configs/biomarker/IMPRESS_PD-L1-TUMOR.yaml
+IMPRESS_PR:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/IMPRESS
+  task_cfg: task_configs/biomarker/IMPRESS_PR.yaml
+IMPRESS_RESIDUAL-TUMOR:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/IMPRESS
+  task_cfg: task_configs/subtype/IMPRESS_RESIDUAL-TUMOR.yaml
+MULTI_OMICS:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/Multi-omic
+  task_cfg: task_configs/gene_exp/MULTI_OMICS.yaml
+MULTI_OMICS_ASCAT-PURITY:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/Multi-omic
+  task_cfg: task_configs/gene_exp/MULTI_OMICS_ASCAT-PURITY.yaml
+MULTI_OMICS_FRACTION_CANCER:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/Multi-omic
+  task_cfg: task_configs/gene_exp/MULTI_OMICS_FRACTION_CANCER.yaml
+MULTI_OMICS_HRD:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/Multi-omic
+  task_cfg: task_configs/gene_exp/MULTI_OMICS_HRD.yaml
+MULTI_OMICS_IPS:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/Multi-omic
+  task_cfg: task_configs/gene_exp/MULTI_OMICS_IPS.yaml
+POST-NAT-BRCA-3TYPE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/Post-NAT-BRCA
+  folds: 1
+  task_cfg: task_configs/subtype/POST-NAT-BRCA-3TYPE.yaml
+POST-NAT-BRCA-ANTIHER2:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/Post-NAT-BRCA
+  folds: 1
+  task_cfg: task_configs/biomarker/POST-NAT-BRCA-ANTIHER2.yaml
+POST-NAT-BRCA-ER:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/Post-NAT-BRCA
+  folds: 1
+  task_cfg: task_configs/biomarker/POST-NAT-BRCA-ER.yaml
+POST-NAT-BRCA-HERIHC:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/Post-NAT-BRCA
+  folds: 1
+  task_cfg: task_configs/subtype/POST-NAT-BRCA-HERIHC.yaml
+POST-NAT-BRCA-PR:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/Post-NAT-BRCA
+  folds: 1
+  task_cfg: task_configs/biomarker/POST-NAT-BRCA-PR.yaml
+SLNBREAST_SUBTYPE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/SLN-Breast
+  task_cfg: task_configs/subtype/SLNBREAST_SUBTYPE.yaml
+TCGA-BRCA-SUBTYPE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/subtype/TCGA-BRCA-SUBTYPE.yaml
+TCGA-BRCA-SURVIVAL:
+  batch_size: 10
+  csv_dir: dataset_csv/survival
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/survival/TCGA-BRCA-SURVIVAL.yaml
+TCGA-BRCA_CDH:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/biomarker/TCGA-BRCA_CDH.yaml
+TCGA-BRCA_GATA-3:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/biomarker/TCGA-BRCA_GATA-3.yaml
+TCGA-BRCA_GENE-EXP:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/gene_exp/TCGA-BRCA_GENE-EXP.yaml
+TCGA-BRCA_HRD:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/biomarker/TCGA-BRCA_HRD.yaml
+TCGA-BRCA_M:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/subtype/TCGA-BRCA_M.yaml
+TCGA-BRCA_MAP3K1:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/biomarker/TCGA-BRCA_MAP3K1.yaml
+TCGA-BRCA_MOLECULAR_SUBTYPING:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/subtype/TCGA-BRCA_MOLECULAR_SUBTYPING.yaml
+TCGA-BRCA_MUC16:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/biomarker/TCGA-BRCA_MUC16.yaml
+TCGA-BRCA_N:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/subtype/TCGA-BRCA_N.yaml
+TCGA-BRCA_PIK3CA:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/biomarker/TCGA-BRCA_PIK3CA.yaml
+TCGA-BRCA_PROTEIN:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/gene_exp/TCGA-BRCA_PROTEIN.yaml
+TCGA-BRCA_STAGE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/subtype/TCGA-BRCA_STAGE.yaml
+TCGA-BRCA_T:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/subtype/TCGA-BRCA_T.yaml
+TCGA-BRCA_TP53:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/biomarker/TCGA-BRCA_TP53.yaml
+TCGA-BRCA_TTN:
+  csv_dir: dataset_csv/biomarker
+  embedding_dir: /data4/embedding/TCGA-BRCA
+  task_cfg: task_configs/biomarker/TCGA-BRCA_TTN.yaml
+TUPAC_MOLECULAR_SCORE:
+  csv_dir: dataset_csv/gene_exp
+  embedding_dir: /data4/embedding/TUPAC
+  task_cfg: task_configs/gene_exp/TUPAC_MOLECULAR_SCORE.yaml
+TUPAC_TUMOR_SCORE:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/TUPAC
+  task_cfg: task_configs/subtype/TUPAC_TUMOR_SCORE.yaml
+BCNB_MOLECULAR:
+  csv_dir: dataset_csv/subtype
+  embedding_dir: /data4/embedding/BCNB
+  task_cfg: task_configs/subtype/BCNB_MOLECULAR.yaml

@@ -1,0 +1,12 @@
+add_metrics:
+- qwk
+label_dict:
+  HER2(+): 0
+  Luminal A : 1
+  Luminal B : 2
+  Triple negative: 3
+max_tiles: 4000
+name: BCNB_MOLECULAR
+setting: multi_class
+shuffle_tiles: true
+

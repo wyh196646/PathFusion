@@ -1,0 +1,14 @@
+add_metrics:
+- qwk
+label_dict:
+  #Stage IA: 6
+  Stage IIA: 2
+  Stage IIB: 0
+  #Stage III: 1
+  Stage IIIA: 1
+  #Stage IIIB: 4
+  #Stage IIIC: 5
+max_tiles: 4000
+name: CPTAC_AJCC8SUBTYPE
+setting: multi_class
+shuffle_tiles: true

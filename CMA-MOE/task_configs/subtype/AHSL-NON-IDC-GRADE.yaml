@@ -1,0 +1,10 @@
+add_metrics:
+- qwk
+label_dict:
+  1: 1
+  2: 2
+  3: 0
+max_tiles: 4000
+name: AHSL-NON-IDC-GRADE
+setting: multi_class
+shuffle_tiles: true

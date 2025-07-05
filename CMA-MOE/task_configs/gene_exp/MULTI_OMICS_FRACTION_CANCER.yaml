@@ -1,0 +1,7 @@
+name: MULTI_OMICS_FRACTION_CANCER
+setting: regression
+label_dict:
+      'fraction_cancer' : 0
+max_tiles: 4000
+shuffle_tiles: true
+add_metrics: ['qwk']

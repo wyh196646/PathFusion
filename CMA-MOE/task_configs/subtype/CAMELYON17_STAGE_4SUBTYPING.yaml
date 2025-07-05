@@ -1,0 +1,11 @@
+add_metrics:
+- qwk
+label_dict:
+  itc: 1
+  macro: 3
+  micro: 2
+  negative: 0
+max_tiles: 4000
+name: CAMELYON17_STAGE_4SUBTYPING
+setting: multi_class
+shuffle_tiles: true

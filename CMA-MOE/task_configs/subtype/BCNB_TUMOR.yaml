@@ -1,0 +1,10 @@
+add_metrics:
+- qwk
+label_dict:
+  Invasive ductal carcinoma: 1
+  Invasive lobular carcinoma: 2
+  Other type: 0
+max_tiles: 4000
+name: BCNB_TUMOR
+setting: multi_class
+shuffle_tiles: true

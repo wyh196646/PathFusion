@@ -1,0 +1,10 @@
+add_metrics:
+- qwk
+label_dict:
+  Infiltrating duct carcinoma of breast (disorder) | Abnormal: 0
+  Invasive carcinoma of breast (disorder) | Abnormal: 1
+  Lobular carcinoma of breast (disorder) | Abnormal: 2
+max_tiles: 4000
+name: DORID_6
+setting: multi_class
+shuffle_tiles: true

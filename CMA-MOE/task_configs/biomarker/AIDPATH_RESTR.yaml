@@ -1,0 +1,16 @@
+add_metrics:
+- qwk
+label_dict:
+  0: 1
+  #20: 5
+  #70: 8
+  80: 3
+  85: 4
+  90: 2
+  #95: 6
+  #98: 7
+  100: 0
+max_tiles: 4000
+name: AIDPATH_RESTR
+setting: multi_class
+shuffle_tiles: true

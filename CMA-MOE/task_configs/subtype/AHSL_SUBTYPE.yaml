@@ -1,0 +1,10 @@
+add_metrics:
+- qwk
+label_dict:
+  mammoplasia: 1
+  mammoplasia-IP: 2
+  Benign: 0
+max_tiles: 4000
+name: AHSL_SUBTYPE
+setting: multi_class
+shuffle_tiles: true

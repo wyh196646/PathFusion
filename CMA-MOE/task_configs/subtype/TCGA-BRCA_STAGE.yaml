@@ -1,0 +1,17 @@
+add_metrics:
+- qwk
+label_dict:
+  Stage I: 1
+  Stage IA: 5
+  Stage IIA: 0
+  Stage IIB: 2
+  Stage IIIA: 3
+  Stage IIIB: 6
+  Stage IIIC: 4
+  Stage IV: 7
+  Stage X: 9
+  unknow: 8
+max_tiles: 4000
+name: TCGA-BRCA_STAGE
+setting: multi_class
+shuffle_tiles: true

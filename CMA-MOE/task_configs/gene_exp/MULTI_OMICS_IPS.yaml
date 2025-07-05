@@ -1,0 +1,32 @@
+name: MULTI_OMICS_IPS
+setting: regression
+label_dict:
+    'B2M': 0
+    'TAP1': 1
+    'TAP2': 2
+    'HLA.A': 3
+    'HLA.B': 4
+    'HLA.C': 5
+    'HLA.DPA1': 6
+    'HLA.DPB1': 7
+    'HLA.E': 8
+    'HLA.F': 9
+    'PD.1': 10
+    'CTLA.4': 11
+    'LAG3': 12
+    'TIGIT': 13
+    'TIM3': 14
+    'PD.L1': 15
+    'PD.L2': 16
+    'CD27': 17
+    'ICOS': 18
+    'IDO1': 19
+    'Act.CD4': 20
+    'Act.CD8': 21
+    'Tem.CD4': 22
+    'Tem.CD8': 23
+    'MDSC': 24
+    'Treg': 25
+max_tiles: 4000
+shuffle_tiles: true
+add_metrics: ['qwk']

@@ -1,0 +1,10 @@
+add_metrics:
+- qwk
+label_dict:
+  IDC: 0
+  ILC: 1
+  #ITC: 2
+max_tiles: 4000
+name: POST-NAT-BRCA-3TYPE
+setting: multi_class
+shuffle_tiles: true

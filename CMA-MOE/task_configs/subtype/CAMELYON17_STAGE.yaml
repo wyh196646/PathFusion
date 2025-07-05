@@ -1,0 +1,12 @@
+add_metrics:
+- qwk
+label_dict:
+  pN0: 0
+  pN0(i+): 1
+  pN1: 3
+  pN1mi: 2
+  pN2: 4
+max_tiles: 4000
+name: CAMELYON17_STAGE
+setting: multi_class
+shuffle_tiles: true

@@ -1,0 +1,9 @@
+add_metrics:
+- qwk
+label_dict:
+  ' Invasive carcinoma of breast (disorder)': 0
+  non-invasive carcinoma: 1
+max_tiles: 4000
+name: DORID_2
+setting: multi_class
+shuffle_tiles: true

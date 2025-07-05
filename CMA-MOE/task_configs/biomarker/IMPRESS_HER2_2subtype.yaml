@@ -1,0 +1,14 @@
+name: IMPRESS_HER2_2subtype
+setting: multi_label
+label_dict:
+  'ER (+-1/-0)': 0
+  'PR (+/-)' : 1
+  'pCR': 2
+  'PD-L1-tumor (cutoff 1%, 1- positive, 0-negative)': 3
+  'PD-L1-stroma  (cutoff 1%, 1- positive, 0-negative)': 4
+  'CD8-peritumoral  (cutoff 10%, 1- positive, 0-negative)': 5
+  'CD8-intratumoral (cutoff 10%, 1- positive, 0-negative)': 6
+  'CD163-intratumoral  (cutoff 10%, 1- positive, 0-negative)': 7
+  'CD163-peritumoral (cutoff 10%, 1- positive, 0-negative)':  8
+max_tiles: 4000
+shuffle_tiles: true

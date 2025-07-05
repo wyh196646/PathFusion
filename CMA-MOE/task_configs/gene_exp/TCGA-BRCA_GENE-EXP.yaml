@@ -1,0 +1,55 @@
+label_dict:
+  ACTR3B: 25
+  ANLN: 26
+  BAG1: 27
+  BCL2: 19
+  BIRC5: 28
+  BLVRA: 29
+  CCNB1: 20
+  CCNE1: 10
+  CDC20: 21
+  CDC6: 30
+  CDH3: 31
+  CENPF: 11
+  CEP55: 12
+  CXXC5: 32
+  EGFR: 33
+  ERBB2: 18
+  ESR1: 9
+  EXO1: 34
+  FGFR4: 13
+  FOXA1: 35
+  FOXC1: 36
+  GPR160: 37
+  GRB7: 38
+  KIF2C: 8
+  KRT14: 7
+  KRT17: 6
+  KRT5: 39
+  MAPT: 5
+  MDM2: 40
+  MELK: 41
+  MIA: 4
+  MKI67: 3
+  MLPH: 42
+  MMP11: 14
+  MYBL2: 43
+  MYC: 44
+  NAT1: 22
+  NDC80: 49
+  NUF2: 47
+  ORC6: 48
+  PGR: 2
+  PHGDH: 45
+  PTTG1: 1
+  RRM2: 23
+  SFRP1: 15
+  SLC39A6: 46
+  TMEM45B: 16
+  TYMS: 17
+  UBE2C: 24
+  UBE2T: 0
+max_tiles: 4000
+name: TCGA-BRCA_GENE-EXP
+setting: regression
+shuffle_tiles: true

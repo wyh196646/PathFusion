@@ -1,0 +1,12 @@
+add_metrics:
+- qwk
+label_dict:
+  Basal: 0
+  Her2: 1
+  LumA: 3
+  LumB: 2
+  Normal: 4
+max_tiles: 4000
+name: TCGA-BRCA_MOLECULAR_SUBTYPING
+setting: multi_class
+shuffle_tiles: true

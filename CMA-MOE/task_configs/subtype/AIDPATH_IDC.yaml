@@ -1,0 +1,9 @@
+add_metrics:
+- qwk
+label_dict:
+  Infiltrating ductal carcinoma: 0
+  Infiltrating lobular carcinoma: 1
+max_tiles: 4000
+name: AIDPATH_IDC
+setting: multi_class
+shuffle_tiles: true
