@@ -27,6 +27,7 @@ class SlideDatasetForTasks(Dataset):
                  task_config: dict, 
                  slide_key: str='slide_id',
                  split_key: str='pat_id',
+                 base_models: list=['UNI', 'CONCH'],
                  **kwargs
                  ):
         '''
@@ -51,6 +52,7 @@ class SlideDatasetForTasks(Dataset):
         self.split_key = split_key
         self.slide_key = slide_key
         self.task_cfg = task_config
+        self.base_models = base_models
         valid_slides = self.get_valid_slides(root_path, data_df[slide_key].values)
         data_df = data_df[data_df[slide_key].isin(valid_slides)]
         self.setup_data(data_df, splits, task_config.get('setting', 'multi_class'))
@@ -206,7 +208,7 @@ class SlideDataset(SlideDatasetForTasks):
         split_key: str
             The key that specifies the column for splitting the data
         '''
-        super(SlideDataset, self).__init__(data_df, root_path, splits, task_config, slide_key, split_key, **kwargs)
+        super(SlideDataset, self).__init__(data_df, root_path, splits, task_config, slide_key, split_key,base_models, **kwargs)
         self.base_models = base_models
         
     def shuffle_data(self, images: torch.Tensor, coords: torch.Tensor) -> tuple:

@@ -36,7 +36,7 @@ def train(dataloader, fold, args):
     if "wandb" in args.report_to:
         wandb.init(
             project= args.task,
-            name=args.pretrain_model + '_fold_' + str(fold)+ '_'+ str(args.tuning_method)+'_'+str(args.lr),
+            name=args.fusion_type + '_fold_' + str(fold)+ '_'+ str(args.tuning_method)+'_'+str(args.lr),
             id='fold_' + str(fold)+'_'+str(args.pretrain_model)+'_'+  str(args.tuning_method)+'_'+str(args.lr),
             tags=[],
             config=vars(args),
@@ -47,8 +47,9 @@ def train(dataloader, fold, args):
         writer = tensorboard.SummaryWriter(writer_dir, flush_secs=15)
 
     if args.fusion_type == 'concat':
-        from models.concat_fusion import ConcatFusionNet
-        model = ConcatFusionNet(args)
+        #from models.concat_fusion import ConcatFusionNet
+        #model = ConcatFusionNet(args)
+        model = initiate_linear_model(args)
     elif args.fusion_type == 'self_attention':
         from models.self_attention_fusion import SelfAttentionFusionNet
         model = SelfAttentionFusionNet(args)
@@ -141,7 +142,11 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
     model.train()
     # set the start time
     start_time = time.time()
+    import pickle
 
+# 保存字典到.pkl文件
+    # with open('data.pkl', 'wb') as f:
+    #     pickle.dump(data, f)
     # monitoring sequence length
     seq_len = 0
 
@@ -154,17 +159,17 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
             adjust_learning_rate(optimizer, batch_idx / len(train_loader) + epoch, args)
 
         # load the batch and transform this batch
-        images, img_coords, pad_mask, label,  = batch['imgs'], batch['coords'],batch['pad_mask'], batch['labels']
-        images = images.to(args.device, non_blocking=True)
-        img_coords = img_coords.to(args.device, non_blocking=True)
-        pad_mask = pad_mask.to(args.device, non_blocking=True)
-        label = label.to(args.device, non_blocking=True)
-        seq_len += images.shape[1]
+        # images, img_coords, pad_mask, label,  = batch['imgs'], batch['coords'],batch['pad_mask'], batch['labels']
+        # images = images.to(args.device, non_blocking=True)
+        # img_coords = img_coords.to(args.device, non_blocking=True)
+        # pad_mask = pad_mask.to(args.device, non_blocking=True)
+        # label = label.to(args.device, non_blocking=True)
+        # seq_len += images.shape[1]
 
         with torch.cuda.amp.autocast(dtype=torch.float16 if args.fp16 else torch.float32):
             # print(pad_mask.shape)
         
-            logits = model(images, img_coords, pad_mask)
+           # logits = model(images, img_coords, pad_mask)
             if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):
                 label = label.squeeze(-1).float()
             elif isinstance(loss_fn, torch.nn.MSELoss):

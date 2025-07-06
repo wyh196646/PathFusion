@@ -105,22 +105,66 @@ def pad_tensors(imgs, coords):
 
 
 
-def slide_collate_fn(samples):
+# def slide_collate_fn(samples):
 
-    image_list = [s['imgs'] for s in samples]
-    img_len_list = [s['imgs'].size(0) for s in samples]
-    coord_list = [s['coords'] for s in samples]
+#     image_list = [s['imgs'] for s in samples]
+#     img_len_list = [s['imgs'].size(0) for s in samples]
+#     coord_list = [s['coords'] for s in samples]
+#     label_list = [s['labels'] for s in samples]
+#     slide_id_list = [s['slide_id'] for s in samples]
+#     labels = torch.stack(label_list)
+#     pad_imgs, pad_coords, pad_mask = pad_tensors(image_list, coord_list)
+    
+#     data_dict = {'imgs': pad_imgs, 
+#             'img_lens': img_len_list,
+#             'coords': pad_coords,
+#             'slide_id': slide_id_list,
+#             'pad_mask': pad_mask,
+#             'labels': labels}
+#     return data_dict
+
+def slide_collate_fn(samples):
+    
+    """
+    支持单模型和多模型：batch=[sample1, sample2, ...]，每个sample的imgs_list长度可为1或>1
+    """
+    n_models = len(samples[0]['imgs_list'])
+    batch_size = len(samples)
+    
+    # 逐模型分别pad、stack
+    imgs_lists = [[] for _ in range(n_models)]
+    coords_lists = [[] for _ in range(n_models)]
+    img_lens_lists = [[] for _ in range(n_models)]
+    for s in samples:
+        for m in range(n_models):
+            imgs_lists[m].append(s['imgs_list'][m])
+            coords_lists[m].append(s['coords_list'][m])
+            img_lens_lists[m].append(s['img_lens_list'][m])
+    # 分别pad
+    pad_imgs_list, pad_coords_list, pad_mask_list = [], [], []
+    for m in range(n_models):
+        pad_imgs, pad_coords, pad_mask = pad_tensors(imgs_lists[m], coords_lists[m])
+        pad_imgs_list.append(pad_imgs)       # [B, T, D]
+        pad_coords_list.append(pad_coords)   # [B, T, 2]
+        pad_mask_list.append(pad_mask)       # [B, T]
     label_list = [s['labels'] for s in samples]
     slide_id_list = [s['slide_id'] for s in samples]
     labels = torch.stack(label_list)
-    pad_imgs, pad_coords, pad_mask = pad_tensors(image_list, coord_list)
-    
-    data_dict = {'imgs': pad_imgs, 
-            'img_lens': img_len_list,
-            'coords': pad_coords,
-            'slide_id': slide_id_list,
-            'pad_mask': pad_mask,
-            'labels': labels}
+    # img_lens: [n_models][batch_size]，可选是否用
+    data_dict = {
+        'imgs_list': pad_imgs_list,            # list of [B, T, D]
+        'coords_list': pad_coords_list,
+        'pad_mask_list': pad_mask_list,
+        'img_lens_list': img_lens_lists,       # list of [B]
+        'labels': labels,
+        'slide_id': slide_id_list,
+    }
+    # 若只有单一模型，自动降维并兼容老接口
+    if n_models == 1:
+        data_dict['imgs'] = pad_imgs_list[0]
+        data_dict['coords'] = pad_coords_list[0]
+        data_dict['pad_mask'] = pad_mask_list[0]
+        data_dict['img_lens'] = img_lens_lists[0]
     return data_dict
 
 
@@ -306,13 +350,8 @@ def adjust_learning_rate(optimizer, epoch, args):
 
 
 def get_optimizer(args, model):
-    if args.pretrain_model =='FMBC':
-        if args.lr_strategy =="Different":
-            param_groups = param_groups_lrd(model, args.optim_wd,layer_decay=args.layer_decay)
-        else:
-            param_groups = model.parameters()
-    else:
-        param_groups = model.parameters()
+
+    param_groups = model.parameters()
     # make the optimizer
     optim_func = torch.optim.AdamW if args.optim == 'adamw' else torch.optim.Adam
     optimizer = optim_func(param_groups, lr=args.lr)
@@ -479,9 +518,6 @@ def initiate_mil_model(args):
             model = MIL_fc(**model_dict)
     return model
 
-def initiate_linear_model(args):
-    model = linear_probe(args.input_dim, args.latent_dim, args.n_classes)
-    return model
 
 
 def bootstrap( all_labels_across_folds, all_preds_across_folds, num_bootstraps=100):
@@ -563,3 +599,7 @@ def get_mean_se(all_scores_across_folds):
 
     return summary
     
+    
+def initiate_linear_model(args):
+    model = linear_probe(args.input_dim, args.latent_dim, args.n_classes)
+    return model
