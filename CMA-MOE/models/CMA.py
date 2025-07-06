@@ -79,7 +79,7 @@ class LSTCWA(nn.Module):
                 f_win  = feats_seg[slc]                    # [w', D]
                 c_win  = coords_seg[slc]                   # [w', 2]
 
-                # ----- Cross attention -----
+              
                 q = self.q(self.z[l:l+1])                  # [1, D]
                 k = self.k(f_win)                          # [w', D]
                 v = self.v(f_win)
@@ -110,3 +110,81 @@ class LSTCWA(nn.Module):
             return self.proj_out(Z), (alpha_map, coords) 
         else:
             return self.proj_out(Z)
+
+
+
+class HierarchicalMemoryMoE(nn.Module):
+    def __init__(self, num_experts, token_dim, memory_size, num_memory_layers, gamma=0.1):
+        super().__init__()
+        self.num_experts = num_experts
+        self.token_dim = token_dim
+        self.memory_size = memory_size
+        self.num_memory_layers = num_memory_layers
+        self.gamma = gamma
+
+        # Expert Networks
+        self.experts = nn.ModuleList([
+            nn.TransformerEncoder(
+                nn.TransformerEncoderLayer(d_model=token_dim, nhead=8), 
+                num_layers=1
+            )
+            for _ in range(num_experts)
+        ])
+
+        # Hierarchical Memory (multiple layers)
+        self.memories = nn.ParameterList([
+            nn.Parameter(torch.randn(memory_size, token_dim))
+            for _ in range(num_memory_layers)
+        ])
+
+        # Memory Aggregation layer
+        self.memory_agg = nn.Linear(token_dim * num_memory_layers, token_dim)
+
+        # Gating vector
+        self.global_gate = nn.Parameter(torch.randn(token_dim, 1))
+
+    def forward(self, tokens_per_backbone):
+        expert_outputs = []
+        memory_updates = [torch.zeros_like(memory) for memory in self.memories]
+
+        # Compute expert outputs and memory attentions
+        for i, tokens in enumerate(tokens_per_backbone):
+            context = torch.cat([tokens_per_backbone[j] for j in range(self.num_experts) if j != i], dim=0)
+
+            # Cross-attention between backbones
+            cross_attn_scores = F.softmax(tokens @ context.T / tokens.size(-1)**0.5, dim=-1)
+            cross_attn_output = cross_attn_scores @ context
+
+            # Expert processing
+            expert_input = tokens + cross_attn_output
+            expert_output = self.experts[i](expert_input)
+
+            memory_retrievals = []
+            for l, memory in enumerate(self.memories):
+                # Memory attention
+                attn_scores = F.softmax(expert_output @ memory.T / self.token_dim**0.5, dim=-1)
+                memory_retrieval = attn_scores @ memory
+                memory_retrievals.append(memory_retrieval)
+
+                # Update memory
+                memory_updates[l] += attn_scores.T @ expert_output
+
+            # Aggregate multi-layer memory retrievals
+            multi_memory_retrieval = self.memory_agg(torch.cat(memory_retrievals, dim=-1))
+
+            expert_outputs.append(expert_output + multi_memory_retrieval)
+
+        # Update memories with stable rule
+        with torch.no_grad():
+            for l in range(self.num_memory_layers):
+                self.memories[l].data = (1 - self.gamma) * self.memories[l].data + self.gamma * memory_updates[l]
+
+        # Compute gate weights
+        pooled_expert_outputs = [e.mean(dim=0) for e in expert_outputs]
+        gate_logits = torch.stack([po @ self.global_gate for po in pooled_expert_outputs], dim=0).squeeze(-1)
+        gate_weights = F.softmax(gate_logits, dim=0)
+
+        # Weighted fusion
+        fused_output = sum(w * e for w, e in zip(gate_weights, expert_outputs))
+
+        return fused_output, gate_weights

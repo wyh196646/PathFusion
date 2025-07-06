@@ -157,7 +157,11 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
         # we use a per iteration lr scheduler
         if batch_idx % args.gc == 0 and args.lr_scheduler == 'cosine':
             adjust_learning_rate(optimizer, batch_idx / len(train_loader) + epoch, args)
+        # import pickle
 
+        # # 保存字典到.pkl文件
+        # with open('data.pkl', 'wb') as f:
+        #     pickle.dump(batch, f)
         # load the batch and transform this batch
         # images, img_coords, pad_mask, label,  = batch['imgs'], batch['coords'],batch['pad_mask'], batch['labels']
         # images = images.to(args.device, non_blocking=True)
