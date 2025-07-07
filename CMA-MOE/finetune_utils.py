@@ -105,23 +105,7 @@ def pad_tensors(imgs, coords):
 
 
 
-# def slide_collate_fn(samples):
 
-#     image_list = [s['imgs'] for s in samples]
-#     img_len_list = [s['imgs'].size(0) for s in samples]
-#     coord_list = [s['coords'] for s in samples]
-#     label_list = [s['labels'] for s in samples]
-#     slide_id_list = [s['slide_id'] for s in samples]
-#     labels = torch.stack(label_list)
-#     pad_imgs, pad_coords, pad_mask = pad_tensors(image_list, coord_list)
-    
-#     data_dict = {'imgs': pad_imgs, 
-#             'img_lens': img_len_list,
-#             'coords': pad_coords,
-#             'slide_id': slide_id_list,
-#             'pad_mask': pad_mask,
-#             'labels': labels}
-#     return data_dict
 
 def slide_collate_fn(samples):
     

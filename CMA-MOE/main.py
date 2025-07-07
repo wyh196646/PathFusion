@@ -8,6 +8,7 @@ from params import get_finetune_params
 from task_configs.utils import load_task_config
 from finetune_utils import seed_torch, get_exp_code, get_splits, get_loader, save_obj, process_predicted_data,process_survival_predicted_data
 from datasets.slide_dataset import SlideDataset
+from models.CMA import FusionModel
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 if __name__ == '__main__':
@@ -20,10 +21,30 @@ if __name__ == '__main__':
     args.device = device
     seed_torch(device, args.seed)
     
+    # 选择基础模型数量和token_dim
     if args.fusion_type == 'none':
         use_base_models = [args.pretrain_model]
+        num_experts = 1
     else:
         use_base_models = args.base_models
+        num_experts = len(use_base_models)
+    # token_dim需根据实际模型输出确定，这里假设为args.input_dim
+    token_dim = args.input_dim
+
+    # 实例化融合模型
+    if args.fusion_type != 'none':
+        fusion_model = FusionModel(
+            fusion_type=args.fusion_type,
+            num_experts=num_experts,
+            token_dim=token_dim,
+            memory_size=getattr(args, "memory_size", 32),
+            num_memory_layers=getattr(args, "num_memory_layers", 2),
+            gamma=getattr(args, "gamma", 0.1),
+            mlp_hidden=getattr(args, "mlp_hidden", 256),
+            attn_heads=getattr(args, "attn_heads", 8)
+        ).to(args.device)
+    else:
+        fusion_model = None
 
 
     # load the task configuration
@@ -110,7 +131,12 @@ if __name__ == '__main__':
         # get the dataloader
         train_loader, val_loader, test_loader = get_loader(train_data, val_data, test_data, **vars(args))
         # start training
-        val_records, test_records = train((train_loader, val_loader, test_loader), fold, args)
+        val_records, test_records = train(
+            (train_loader, val_loader, test_loader), 
+            fold, 
+            args,
+            fusion_model=fusion_model
+        )
 
         # update the results
         

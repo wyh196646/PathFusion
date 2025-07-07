@@ -1,8 +1,7 @@
 import torch
 import math
 import torch.nn as nn
-import torch.nn as nn
-
+import torch.nn.functional as F
 class MultiDimAligner(nn.Module):
 
     def __init__(self, D_target=512):
@@ -188,3 +187,70 @@ class HierarchicalMemoryMoE(nn.Module):
         fused_output = sum(w * e for w, e in zip(gate_weights, expert_outputs))
 
         return fused_output, gate_weights
+
+
+class FusionModel(nn.Module):
+    """
+    支持多种融合方式的多模型融合类
+    fusion_type: 'moe' | 'concat' | 'self_attention' | 'cross_attention'
+    """
+    def __init__(self, 
+                 fusion_type: str,
+                 num_experts: int,
+                 token_dim: int,
+                 memory_size: int = 32,
+                 num_memory_layers: int = 2,
+                 gamma: float = 0.1,
+                 mlp_hidden: int = 256,
+                 attn_heads: int = 8):
+        super().__init__()
+        self.fusion_type = fusion_type.lower()
+        self.num_experts = num_experts
+        self.token_dim = token_dim
+
+        if self.fusion_type == "moe":
+            self.fusion = HierarchicalMemoryMoE(num_experts, token_dim, memory_size, num_memory_layers, gamma)
+        elif self.fusion_type == "concat":
+            self.fusion = nn.Sequential(
+                nn.Linear(num_experts * token_dim, mlp_hidden),
+                nn.ReLU(),
+                nn.Linear(mlp_hidden, token_dim)
+            )
+        elif self.fusion_type == "self_attention":
+            self.attn = nn.MultiheadAttention(token_dim, attn_heads, batch_first=True)
+            self.proj = nn.Linear(num_experts * token_dim, token_dim)
+        elif self.fusion_type == "cross_attention":
+            self.cross_attn = nn.MultiheadAttention(token_dim, attn_heads, batch_first=True)
+            self.proj = nn.Linear(token_dim, token_dim)
+        else:
+            raise ValueError(f"Unknown fusion_type: {fusion_type}")
+
+    def forward(self, tokens_per_backbone):
+        """
+        tokens_per_backbone: list of [N, D] tensors, N为token数，D为token_dim
+        返回: fused_output, (可选: gate_weights)
+        """
+        if self.fusion_type == "moe":
+            return self.fusion(tokens_per_backbone)
+        elif self.fusion_type == "concat":
+            # [num_experts, N, D] -> [N, num_experts*D]
+            tokens_cat = torch.cat(tokens_per_backbone, dim=-1)
+            fused = self.fusion(tokens_cat)
+            return fused, None
+        elif self.fusion_type == "self_attention":
+            # 堆叠为 [N, num_experts, D]
+            tokens_stack = torch.stack(tokens_per_backbone, dim=1)
+            # 变成 [N, num_experts, D] -> [N, num_experts, D]
+            attn_out, _ = self.attn(tokens_stack, tokens_stack, tokens_stack)
+            attn_out = attn_out.reshape(attn_out.shape[0], -1)
+            fused = self.proj(attn_out)
+            return fused, None
+        elif self.fusion_type == "cross_attention":
+            # 以第一个模型为query，其余为key/value
+            query = tokens_per_backbone[0].unsqueeze(1)  # [N, 1, D]
+            keys = torch.stack(tokens_per_backbone[1:], dim=1)  # [N, num_experts-1, D]
+            attn_out, _ = self.cross_attn(query, keys, keys)
+            fused = self.proj(attn_out.squeeze(1))
+            return fused, None
+        else:
+            raise NotImplementedError

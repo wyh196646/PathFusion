@@ -20,9 +20,9 @@ from finetune_utils import (
     log_writer, adjust_learning_rate, release_nested_dict,
     initiate_mil_model, initiate_linear_model
 )
-#from fewshot_algorithms import FewShot, SimpleShot, NearestNeighbors
+from models.CMA import FusionModel
 
-def train(dataloader, fold, args):
+def train(dataloader, fold, args, fusion_model=None):
     train_loader, val_loader, test_loader = dataloader
     # set up the writer
     writer_dir = os.path.join(args.save_dir, f'fold_{fold}', 'tensorboard')
@@ -46,65 +46,45 @@ def train(dataloader, fold, args):
     elif "tensorboard" in args.report_to:
         writer = tensorboard.SummaryWriter(writer_dir, flush_secs=15)
 
-    if args.fusion_type == 'concat':
-        #from models.concat_fusion import ConcatFusionNet
-        #model = ConcatFusionNet(args)
-        model = initiate_linear_model(args)
-    elif args.fusion_type == 'self_attention':
-        from models.self_attention_fusion import SelfAttentionFusionNet
-        model = SelfAttentionFusionNet(args)
-    elif args.fusion_type == 'cross_attention':
-        from models.cross_attention_fusion import CrossAttentionFusionNet
-        model = CrossAttentionFusionNet(args)
-    elif args.fusion_type == 'cma':
-        from models.cma_fusion import CMAFusionNet
-        model = CMAFusionNet(args)
-    elif args.fusion_type == 'none':
-        model = initiate_linear_model(args)  # 单模型
+    # 决定模型
+    if args.fusion_type == 'none':
+        model = initiate_linear_model(args)  # 单模型，线性头
+        fusion = None
     else:
-        raise ValueError(f'Unknown fusion_type: {args.fusion_type}')
-    ...
-
-
+        model = fusion_model  # 多模型融合
+        fusion = fusion_model
 
     model = model.to(args.device)
-    # set up the optimizer
     optimizer = get_optimizer(args, model)
-    # set up the loss function
     loss_fn = get_loss_function(args.task_config)
-
     monitor = Monitor_Score()
-
     fp16_scaler = None
     if args.fp16:
         fp16_scaler = torch.cuda.amp.GradScaler()
         print('Using fp16 training')
-    
-    
 
     print('Training on {} samples'.format(len(train_loader.dataset)))
-    print('Validating on {} samples'.format(len(val_loader.dataset))) if val_loader is not None else None
-    print('Testing on {} samples'.format(len(test_loader.dataset))) if test_loader is not None else None
+    print('Validating on {} samples'.format(len(val_loader.dataset)) if val_loader is not None else None)
+    print('Testing on {} samples'.format(len(test_loader.dataset)) if test_loader is not None else None)
     print('Training starts!')
-
 
     val_records, test_records = None, None
     if os.path.exists(os.path.join(args.save_dir, f'fold_{fold}', 'checkpoint.pt')) :
         model.load_state_dict(torch.load(os.path.join(args.save_dir, 'fold_' + str(fold), "checkpoint.pt")))
-        test_records = evaluate(test_loader, model, fp16_scaler, loss_fn, 0, args)
+        test_records = evaluate(test_loader, model, fp16_scaler, loss_fn, 0, args, fusion)
         val_records = test_records
         print(f'Fold {fold} already exists, skipping...')
         print('################################')
         print('################################')
         print('################################')
         return val_records, test_records
-        
+
     for i in range(args.epochs):
         print('Epoch: {}'.format(i))
-        train_records = train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, i, args)
+        train_records = train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, i, args, fusion)
 
         if val_loader is not None:
-            val_records = evaluate(val_loader, model, fp16_scaler, loss_fn, i, args)
+            val_records = evaluate(val_loader, model, fp16_scaler, loss_fn, i, args, fusion)
 
             # update the writer for train and val
             log_dict = {'train_' + k: v for k, v in train_records.items() if 'prob' not in k and 'label' not in k}
@@ -129,7 +109,7 @@ def train(dataloader, fold, args):
     # load model for test
     model.load_state_dict(torch.load(os.path.join(args.save_dir, 'fold_' + str(fold), "checkpoint.pt")))
     # test the model
-    test_records = evaluate(test_loader, model, fp16_scaler, loss_fn, i, args)
+    test_records = evaluate(test_loader, model, fp16_scaler, loss_fn, i, args, fusion)
     # update the writer for test
     log_dict = {'test_' + k: v for k, v in test_records.items() if 'prob' not in k and 'label' not in k}
     log_writer(log_dict, fold, args.report_to, writer)
@@ -138,7 +118,7 @@ def train(dataloader, fold, args):
     return val_records, test_records
 
 
-def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch, args):
+def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch, args, fusion=None):
     model.train()
     # set the start time
     start_time = time.time()
@@ -157,23 +137,27 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
         # we use a per iteration lr scheduler
         if batch_idx % args.gc == 0 and args.lr_scheduler == 'cosine':
             adjust_learning_rate(optimizer, batch_idx / len(train_loader) + epoch, args)
-        # import pickle
-
-        # # 保存字典到.pkl文件
-        # with open('data.pkl', 'wb') as f:
-        #     pickle.dump(batch, f)
-        # load the batch and transform this batch
-        # images, img_coords, pad_mask, label,  = batch['imgs'], batch['coords'],batch['pad_mask'], batch['labels']
-        # images = images.to(args.device, non_blocking=True)
-        # img_coords = img_coords.to(args.device, non_blocking=True)
-        # pad_mask = pad_mask.to(args.device, non_blocking=True)
-        # label = label.to(args.device, non_blocking=True)
-        # seq_len += images.shape[1]
 
         with torch.cuda.amp.autocast(dtype=torch.float16 if args.fp16 else torch.float32):
-            # print(pad_mask.shape)
-        
-           # logits = model(images, img_coords, pad_mask)
+            # 判断输入结构
+            if args.fusion_type == 'none':
+                # 单模型：[B, T, D]
+                images, img_coords, pad_mask, label = batch['imgs'], batch['coords'], batch['pad_mask'], batch['labels']
+                images = images.to(args.device, non_blocking=True)
+                img_coords = img_coords.to(args.device, non_blocking=True)
+                pad_mask = pad_mask.to(args.device, non_blocking=True)
+                label = label.to(args.device, non_blocking=True)
+                logits = model(images, img_coords, pad_mask)
+            else:
+                # 多模型：[B, T, D] * n_models
+                imgs_list = [x.to(args.device, non_blocking=True) for x in batch['imgs_list']]
+                coords_list = [x.to(args.device, non_blocking=True) for x in batch['coords_list']]
+                pad_mask_list = [x.to(args.device, non_blocking=True) for x in batch['pad_mask_list']]
+                label = batch['labels'].to(args.device, non_blocking=True)
+                # 取每个模型的token（可根据你的主干模型输出调整）
+                tokens_per_backbone = [imgs[:, 0, :] for imgs in imgs_list]  # 假设取每个模型的第一个token
+                logits, _ = fusion(tokens_per_backbone)
+
             if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):
                 label = label.squeeze(-1).float()
             elif isinstance(loss_fn, torch.nn.MSELoss):
@@ -214,7 +198,7 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
 def chunk_batch(batch, chunk_size):
     return [batch[k:k+chunk_size] for k in range(0, len(batch), chunk_size)]
 
-def evaluate(loader, model, fp16_scaler, loss_fn, epoch, args):
+def evaluate(loader, model, fp16_scaler, loss_fn, epoch, args, fusion=None):
     model.eval()
 
     # set the evaluation records
@@ -223,30 +207,35 @@ def evaluate(loader, model, fp16_scaler, loss_fn, epoch, args):
     # get the task setting
     task_setting = args.task_config.get('setting', 'multi_class')
     if task_setting == 'survival':
-        records={
+        records = {
             'prob': [],
-            'label':[],
-            'slide_id':[],
+            'label': [],
+            'slide_id': [],
             'loss': 0.0,
         }
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader):
-            # load the batch and transform this batch
-            images, img_coords, pad_mask, label,slide_id = batch['imgs'], batch['coords'],batch['pad_mask'], batch['labels'],batch['slide_id']
-            images = images.to(args.device, non_blocking=True)
-            img_coords = img_coords.to(args.device, non_blocking=True)
-            pad_mask = pad_mask.to(args.device, non_blocking=True)
-            label = label.to(args.device, non_blocking=True)
-            
-
-            with torch.cuda.amp.autocast(fp16_scaler is not None, dtype=torch.float16):
+            if args.fusion_type == 'none':
+                images, img_coords, pad_mask, label, slide_id = batch['imgs'], batch['coords'], batch['pad_mask'], batch['labels'], batch['slide_id']
+                images = images.to(args.device, non_blocking=True)
+                img_coords = img_coords.to(args.device, non_blocking=True)
+                pad_mask = pad_mask.to(args.device, non_blocking=True)
+                label = label.to(args.device, non_blocking=True)
                 logits = model(images, img_coords, pad_mask)
-                # get the loss
-                if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):
-                    label = label.squeeze(-1).float()
-                else:
-                    label = label.squeeze(-1)
-                loss = loss_fn(logits, label)
+            else:
+                imgs_list = [x.to(args.device, non_blocking=True) for x in batch['imgs_list']]
+                coords_list = [x.to(args.device, non_blocking=True) for x in batch['coords_list']]
+                pad_mask_list = [x.to(args.device, non_blocking=True) for x in batch['pad_mask_list']]
+                label = batch['labels'].to(args.device, non_blocking=True)
+                slide_id = batch['slide_id']
+                tokens_per_backbone = [imgs[:, 0, :] for imgs in imgs_list]  # 假设取每个模型的第一个token
+                logits, _ = fusion(tokens_per_backbone)
+
+            if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):
+                label = label.squeeze(-1).float()
+            else:
+                label = label.squeeze(-1)
+            loss = loss_fn(logits, label)
 
             # update the records
             records['loss'] += loss.item()
