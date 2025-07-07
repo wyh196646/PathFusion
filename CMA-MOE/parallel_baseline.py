@@ -13,10 +13,7 @@ gpu_config = {
     6: 16,   
     7: 16,
 }
-# pretrain_models = ['Gigapath_tile', 'CONCH', 'UNI', 'TITAN', 'Virchow',
-#                    'CHIEF_tile', 'Gigapath', 'CHIEF','FMBC','PRISM',
-#                    'FMBC_Slide_25_cls','FMBC_Slide_75_cls','FMBC_Slide_50_cls',
-#                    'FMBC_Slide_100_cls','UNI_Slide_25_cls','Gigapath_tile_Slide_25_cls']
+
 pretrain_models = ['Gigapath_tile', 'CONCH', 'UNI', 
                    'CHIEF_tile', 'Gigapath', 'CHIEF','PRISM',
                    'FMBC_Slide_25_cls']

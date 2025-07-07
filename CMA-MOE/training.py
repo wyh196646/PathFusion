@@ -124,10 +124,7 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
     start_time = time.time()
     import pickle
 
-# 保存字典到.pkl文件
-    # with open('data.pkl', 'wb') as f:
-    #     pickle.dump(data, f)
-    # monitoring sequence length
+
     seq_len = 0
 
     # setup the records
@@ -155,8 +152,8 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
                 pad_mask_list = [x.to(args.device, non_blocking=True) for x in batch['pad_mask_list']]
                 label = batch['labels'].to(args.device, non_blocking=True)
                 # 取每个模型的token（可根据你的主干模型输出调整）
-                tokens_per_backbone = [imgs[:, 0, :] for imgs in imgs_list]  # 假设取每个模型的第一个token
-                logits, _ = fusion(tokens_per_backbone)
+                
+                logits, _ = fusion(imgs_list)
 
             if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):
                 label = label.squeeze(-1).float()
