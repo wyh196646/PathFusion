@@ -586,4 +586,12 @@ def get_mean_se(all_scores_across_folds):
     
 def initiate_linear_model(args):
     model = linear_probe(args.input_dim, args.latent_dim, args.n_classes)
+    
+    # Initialize weights more carefully
+    for module in model.modules():
+        if isinstance(module, nn.Linear):
+            nn.init.xavier_uniform_(module.weight, gain=0.1)
+            if module.bias is not None:
+                nn.init.zeros_(module.bias)
+    
     return model

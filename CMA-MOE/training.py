@@ -20,7 +20,6 @@ from finetune_utils import (
     log_writer, adjust_learning_rate, release_nested_dict,
     initiate_mil_model, initiate_linear_model
 )
-from models.CMA import FusionModel
 
 def train(dataloader, fold, args, fusion_model=None):
     train_loader, val_loader, test_loader = dataloader
@@ -124,7 +123,6 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
     start_time = time.time()
     import pickle
 
-
     seq_len = 0
 
     # setup the records
@@ -144,6 +142,12 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
                 img_coords = img_coords.to(args.device, non_blocking=True)
                 pad_mask = pad_mask.to(args.device, non_blocking=True)
                 label = label.to(args.device, non_blocking=True)
+                
+                # Debug input
+                if torch.isnan(images).any():
+                    print(f"NaN detected in images at batch {batch_idx}")
+                    images = torch.nan_to_num(images, nan=0.0)
+                
                 logits = model(images, img_coords, pad_mask)
             else:
                 # 多模型：[B, T, D] * n_models
@@ -151,22 +155,67 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
                 coords_list = [x.to(args.device, non_blocking=True) for x in batch['coords_list']]
                 pad_mask_list = [x.to(args.device, non_blocking=True) for x in batch['pad_mask_list']]
                 label = batch['labels'].to(args.device, non_blocking=True)
-                # 取每个模型的token（可根据你的主干模型输出调整）
                 
-                logits, _ = fusion(imgs_list)
+                # Debug inputs
+                for i, imgs in enumerate(imgs_list):
+                    if torch.isnan(imgs).any():
+                        print(f"NaN detected in imgs_list[{i}] at batch {batch_idx}")
+                        imgs_list[i] = torch.nan_to_num(imgs, nan=0.0)
+                
+                logits = fusion(imgs_list, coords_list, pad_mask_list)
+            
+            # Validate and debug logits and labels
+            if torch.isnan(logits).any() or torch.isinf(logits).any():
+                print(f"NaN/Inf detected in logits at batch {batch_idx}")
+                print(f"Logits shape: {logits.shape}, stats: mean={logits.mean().item():.4f}, std={logits.std().item():.4f}")
+                logits = torch.nan_to_num(logits, nan=0.0, posinf=1e6, neginf=-1e6)
 
+            # Prepare labels based on loss function type
             if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):
                 label = label.squeeze(-1).float()
+                # Ensure labels are in [0, 1] range
+                label = torch.clamp(label, 0, 1)
             elif isinstance(loss_fn, torch.nn.MSELoss):
                 label = label.squeeze(-1).float()
-            else:
+            else:  # CrossEntropyLoss
                 label = label.squeeze(-1).long()
+                # Critical: Ensure labels are in valid range [0, n_classes-1]
+                max_class = args.n_classes - 1
+                if label.max() > max_class or label.min() < 0:
+                    print(f"ERROR: Invalid label range at batch {batch_idx}")
+                    print(f"Label stats: min={label.min().item()}, max={label.max().item()}, expected range=[0, {max_class}]")
+                    print(f"Labels: {label}")
+                    print(f"Logits shape: {logits.shape}, n_classes: {args.n_classes}")
+                    # Clamp labels to valid range
+                    label = torch.clamp(label, 0, max_class)
+                
+                # Ensure logits have correct number of classes
+                if logits.shape[-1] != args.n_classes:
+                    print(f"ERROR: Logits dimension mismatch at batch {batch_idx}")
+                    print(f"Logits shape: {logits.shape}, expected n_classes: {args.n_classes}")
+                    continue  # Skip this batch
 
+            # Additional debugging for CrossEntropyLoss
+            # if isinstance(loss_fn, torch.nn.CrossEntropyLoss):
+            #     print(f"Batch {batch_idx}: logits shape={logits.shape}, labels shape={label.shape}")
+            #     print(f"Label range: [{label.min().item()}, {label.max().item()}], n_classes: {args.n_classes}")
+                
             loss = loss_fn(logits, label)
+            
+            # Debug loss
+            if torch.isnan(loss) or torch.isinf(loss):
+                print(f"NaN/Inf loss detected at batch {batch_idx}")
+                print(f"Logits: {logits}")
+                print(f"Labels: {label}")
+                print(f"Loss function: {type(loss_fn)}")
+                continue  # Skip this batch
+            
             loss /= args.gc
 
             if fp16_scaler is None:
                 loss.backward()
+                # Add gradient clipping
+                torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                 # update the parameters with gradient accumulation
                 if (batch_idx + 1) % args.gc == 0:
                     optimizer.step()
@@ -175,6 +224,9 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
                 fp16_scaler.scale(loss).backward()
                 # update the parameters with gradient accumulation
                 if (batch_idx + 1) % args.gc == 0:
+                    # Add gradient clipping
+                    fp16_scaler.unscale_(optimizer)
+                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
                     fp16_scaler.step(optimizer)
                     fp16_scaler.update()
                     optimizer.zero_grad()
@@ -225,13 +277,24 @@ def evaluate(loader, model, fp16_scaler, loss_fn, epoch, args, fusion=None):
                 pad_mask_list = [x.to(args.device, non_blocking=True) for x in batch['pad_mask_list']]
                 label = batch['labels'].to(args.device, non_blocking=True)
                 slide_id = batch['slide_id']
-                tokens_per_backbone = [imgs[:, 0, :] for imgs in imgs_list]  # 假设取每个模型的第一个token
-                logits, _ = fusion(tokens_per_backbone)
+                
+                logits = fusion(imgs_list, coords_list, pad_mask_list)
 
+            # Prepare labels with validation
             if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):
                 label = label.squeeze(-1).float()
+                label = torch.clamp(label, 0, 1)
             else:
                 label = label.squeeze(-1)
+                if isinstance(loss_fn, torch.nn.CrossEntropyLoss):
+                    label = label.long()
+                    # Validate label range
+                    max_class = args.n_classes - 1
+                    if label.max() > max_class or label.min() < 0:
+                        print(f"ERROR: Invalid label range in evaluation at batch {batch_idx}")
+                        print(f"Label stats: min={label.min().item()}, max={label.max().item()}, expected range=[0, {max_class}]")
+                        label = torch.clamp(label, 0, max_class)
+                        
             loss = loss_fn(logits, label)
 
             # update the records

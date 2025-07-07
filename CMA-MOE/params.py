@@ -66,7 +66,7 @@ def get_finetune_params():
     
     #MOE Settings
     parser.add_argument('--base_models', nargs='+', default=['CONCH', 'UNI', 'CHIEF_tile'])
-    parser.add_argument('--base_model_feature_dims', nargs='+', type=int, default=[1024, 768, 512])
+    parser.add_argument('--base_model_feature_dims', nargs='+', type=int, default=[768, 1024, 768])
     parser.add_argument('--fusion_type', type=str, default='none')
     parser.add_argument('--fused_feature_dim', type=int, default=1024)
     parser.add_argument('--use_memory', action='store_true')

@@ -8,7 +8,8 @@ from params import get_finetune_params
 from task_configs.utils import load_task_config
 from finetune_utils import seed_torch, get_exp_code, get_splits, get_loader, save_obj, process_predicted_data,process_survival_predicted_data
 from datasets.slide_dataset import SlideDataset
-from models.CMA import FusionModel
+import torch.nn as nn
+from models.CMA import MultiModelFusionSystem, SingleModelBaseline, SimpleFusionBaseline
 os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
 if __name__ == '__main__':
@@ -25,26 +26,62 @@ if __name__ == '__main__':
     if args.fusion_type == 'none':
         use_base_models = [args.pretrain_model]
         num_experts = 1
+        # 单模型情况下，取第一个维度
+        base_model_dims = [args.base_model_feature_dims[0]] if hasattr(args, 'base_model_feature_dims') else [args.fused_feature_dim]
     else:
         use_base_models = args.base_models
         num_experts = len(use_base_models)
-    # token_dim需根据实际模型输出确定，这里假设为args.input_dim
-    token_dim = args.input_dim
+        # 多模型情况下，使用完整的维度列表
+        base_model_dims = getattr(args, 'base_model_feature_dims', [args.fused_feature_dim] * num_experts)
+        
+    # 验证维度列表长度
+    if len(base_model_dims) != num_experts:
+        print(f"Warning: base_model_feature_dims length {len(base_model_dims)} doesn't match num_experts {num_experts}")
+        base_model_dims = base_model_dims[:num_experts] + [args.fused_feature_dim] * max(0, num_experts - len(base_model_dims))
+    
+    token_dim = args.fused_feature_dim
 
-    # 实例化融合模型
-    if args.fusion_type != 'none':
-        fusion_model = FusionModel(
+    # 实例化模型
+    if args.fusion_type == 'none':
+        # 单模型基线
+        fusion_model = SingleModelBaseline(
+            token_dim=token_dim,
+            n_classes=2,  # 这个会在后面根据任务配置更新
+            head_type="mil",  # 使用MIL头
+            base_model_feature_dims=base_model_dims
+        ).to(args.device)
+    elif args.fusion_type in ['concat', 'self_attention', 'cross_attention']:
+        # 简单融合基线
+        fusion_model = SimpleFusionBaseline(
             fusion_type=args.fusion_type,
             num_experts=num_experts,
             token_dim=token_dim,
-            memory_size=getattr(args, "memory_size", 32),
+            n_classes=2,  # 这个会在后面根据任务配置更新
+            mlp_hidden=getattr(args, "mlp_hidden", 256),
+            attn_heads=getattr(args, "attention_heads", 8),
+            base_model_feature_dims=base_model_dims
+        ).to(args.device)
+    elif args.fusion_type == 'moe':
+        # 完整的多模型融合系统
+        fusion_model = MultiModelFusionSystem(
+            fusion_type=args.fusion_type,
+            num_experts=num_experts,
+            token_dim=token_dim,
+            num_tokens=64,  
+            n_classes=2,  
+            memory_size=getattr(args, "memory_slots", 32),
             num_memory_layers=getattr(args, "num_memory_layers", 2),
             gamma=getattr(args, "gamma", 0.1),
             mlp_hidden=getattr(args, "mlp_hidden", 256),
-            attn_heads=getattr(args, "attn_heads", 8)
+            attn_heads=getattr(args, "attention_heads", 8),
+            base_model_feature_dims=base_model_dims
         ).to(args.device)
     else:
-        fusion_model = None
+        raise ValueError(f"Unknown fusion_type: {args.fusion_type}")
+        
+    print(f"Created model with fusion_type: {args.fusion_type}, num_experts: {num_experts}")
+    print(f"Base model feature dimensions: {base_model_dims}")
+    print(f"Model parameters: {sum(p.numel() for p in fusion_model.parameters() if p.requires_grad)}")
 
 
     # load the task configuration
@@ -127,7 +164,25 @@ if __name__ == '__main__':
                                                         split_key=args.split_key if len(test_splits) > 0 else None,
                                                         base_models=use_base_models
                                                         ) 
+        
         args.n_classes = train_data.n_classes # get the number of classes
+        
+        # Update model with correct number of classes
+        if hasattr(fusion_model, 'mil_head'):
+            # Update the final layer to match n_classes
+            final_layer = fusion_model.mil_head[-1]
+            if isinstance(final_layer, nn.Linear) and final_layer.out_features != args.n_classes:
+                print(f"Updating model output layer from {final_layer.out_features} to {args.n_classes} classes")
+                fusion_model.mil_head[-1] = nn.Linear(final_layer.in_features, args.n_classes).to(args.device)
+        elif hasattr(fusion_model, 'head'):
+            # For SimpleFusionBaseline
+            final_layer = fusion_model.head[-1]
+            if isinstance(final_layer, nn.Linear) and final_layer.out_features != args.n_classes:
+                print(f"Updating model output layer from {final_layer.out_features} to {args.n_classes} classes")
+                fusion_model.head[-1] = nn.Linear(final_layer.in_features, args.n_classes).to(args.device)
+        
+        fusion_model.n_classes = args.n_classes  # Update model's n_classes attribute
+        
         # get the dataloader
         train_loader, val_loader, test_loader = get_loader(train_data, val_data, test_data, **vars(args))
         # start training
