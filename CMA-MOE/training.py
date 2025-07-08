@@ -150,7 +150,7 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
                 
                 logits = model(images, img_coords, pad_mask)
             else:
-                # 多模型：[B, T, D] * n_models
+                # 多模型：list of [B, T, D]
                 imgs_list = [x.to(args.device, non_blocking=True) for x in batch['imgs_list']]
                 coords_list = [x.to(args.device, non_blocking=True) for x in batch['coords_list']]
                 pad_mask_list = [x.to(args.device, non_blocking=True) for x in batch['pad_mask_list']]
@@ -170,15 +170,14 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
                 print(f"Logits shape: {logits.shape}, stats: mean={logits.mean().item():.4f}, std={logits.std().item():.4f}")
                 logits = torch.nan_to_num(logits, nan=0.0, posinf=1e6, neginf=-1e6)
 
-            # Prepare labels based on loss function type
+            # Prepare labels based on loss function type - handle batch dimension
             if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):
-                label = label.squeeze(-1).float()
-                # Ensure labels are in [0, 1] range
+                label = label.squeeze(-1).float()  # [B]
                 label = torch.clamp(label, 0, 1)
             elif isinstance(loss_fn, torch.nn.MSELoss):
-                label = label.squeeze(-1).float()
+                label = label.squeeze(-1).float()  # [B]
             else:  # CrossEntropyLoss
-                label = label.squeeze(-1).long()
+                label = label.squeeze(-1).long()  # [B]
                 # Critical: Ensure labels are in valid range [0, n_classes-1]
                 max_class = args.n_classes - 1
                 if label.max() > max_class or label.min() < 0:
@@ -186,19 +185,13 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
                     print(f"Label stats: min={label.min().item()}, max={label.max().item()}, expected range=[0, {max_class}]")
                     print(f"Labels: {label}")
                     print(f"Logits shape: {logits.shape}, n_classes: {args.n_classes}")
-                    # Clamp labels to valid range
                     label = torch.clamp(label, 0, max_class)
                 
                 # Ensure logits have correct number of classes
                 if logits.shape[-1] != args.n_classes:
                     print(f"ERROR: Logits dimension mismatch at batch {batch_idx}")
                     print(f"Logits shape: {logits.shape}, expected n_classes: {args.n_classes}")
-                    continue  # Skip this batch
-
-            # Additional debugging for CrossEntropyLoss
-            # if isinstance(loss_fn, torch.nn.CrossEntropyLoss):
-            #     print(f"Batch {batch_idx}: logits shape={logits.shape}, labels shape={label.shape}")
-            #     print(f"Label range: [{label.min().item()}, {label.max().item()}], n_classes: {args.n_classes}")
+                    continue
                 
             loss = loss_fn(logits, label)
             
@@ -250,18 +243,16 @@ def chunk_batch(batch, chunk_size):
 def evaluate(loader, model, fp16_scaler, loss_fn, epoch, args, fusion=None):
     model.eval()
 
-    # set the evaluation records
-    records = get_records_array(len(loader), args.n_classes)
+    # set the evaluation records - adjust for batch processing
+    all_probs = []
+    all_labels = []
+    all_slide_ids = []
+    total_loss = 0.0
+    num_batches = 0
 
     # get the task setting
     task_setting = args.task_config.get('setting', 'multi_class')
-    if task_setting == 'survival':
-        records = {
-            'prob': [],
-            'label': [],
-            'slide_id': [],
-            'loss': 0.0,
-        }
+    
     with torch.no_grad():
         for batch_idx, batch in enumerate(loader):
             if args.fusion_type == 'none':
@@ -280,7 +271,7 @@ def evaluate(loader, model, fp16_scaler, loss_fn, epoch, args, fusion=None):
                 
                 logits = fusion(imgs_list, coords_list, pad_mask_list)
 
-            # Prepare labels with validation
+            # Prepare labels with validation - handle batch dimension
             if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):
                 label = label.squeeze(-1).float()
                 label = torch.clamp(label, 0, 1)
@@ -288,7 +279,6 @@ def evaluate(loader, model, fp16_scaler, loss_fn, epoch, args, fusion=None):
                 label = label.squeeze(-1)
                 if isinstance(loss_fn, torch.nn.CrossEntropyLoss):
                     label = label.long()
-                    # Validate label range
                     max_class = args.n_classes - 1
                     if label.max() > max_class or label.min() < 0:
                         print(f"ERROR: Invalid label range in evaluation at batch {batch_idx}")
@@ -296,35 +286,50 @@ def evaluate(loader, model, fp16_scaler, loss_fn, epoch, args, fusion=None):
                         label = torch.clamp(label, 0, max_class)
                         
             loss = loss_fn(logits, label)
+            total_loss += loss.item()
+            num_batches += 1
 
-            # update the records
-            records['loss'] += loss.item()
+            # Process predictions and labels for metrics - handle batch dimension
             if task_setting == 'multi_label':
-                Y_prob = torch.sigmoid(logits)
-                records['prob'][batch_idx] = Y_prob.cpu().numpy()
-                records['label'][batch_idx] = label.cpu().numpy()
-                records['slide_id'].extend(slide_id)
+                Y_prob = torch.sigmoid(logits).cpu().numpy()  # [B, n_classes]
+                all_probs.append(Y_prob)
+                all_labels.append(label.cpu().numpy())  # [B, n_classes]
+                all_slide_ids.extend(slide_id)
             elif task_setting == 'multi_class' or task_setting == 'binary':
-                Y_prob = torch.softmax(logits, dim=1).cpu()
-                records['prob'][batch_idx] = Y_prob.numpy()
+                Y_prob = torch.softmax(logits, dim=1).cpu().numpy()  # [B, n_classes]
+                all_probs.append(Y_prob)
                 # convert label to one-hot
-                label_ = torch.zeros_like(Y_prob).scatter_(1, label.cpu().unsqueeze(1), 1)
-                records['label'][batch_idx] = label_.numpy()
-                records['slide_id'].extend(slide_id)
+                label_onehot = torch.zeros(label.size(0), args.n_classes)  # [B, n_classes]
+                label_onehot.scatter_(1, label.cpu().unsqueeze(1), 1)
+                all_labels.append(label_onehot.numpy())
+                all_slide_ids.extend(slide_id)
             elif task_setting == 'regression':
-                records['prob'][batch_idx] = logits.cpu().numpy()
-                records['label'][batch_idx] = label.cpu().numpy()
-                records['slide_id'].extend(slide_id)
+                all_probs.append(logits.cpu().numpy())  # [B, 1]
+                all_labels.append(label.cpu().numpy())  # [B, 1]
+                all_slide_ids.extend(slide_id)
             elif task_setting == 'survival':
-                records['prob'].extend( logits.squeeze().cpu().numpy())
-                records['label'].extend(label.cpu().numpy())
-                records['slide_id'].extend(slide_id)
+                all_probs.extend(logits.squeeze().cpu().numpy())  # [B] -> extend to list
+                all_labels.extend(label.cpu().numpy())            # [B, 2] -> extend to list
+                all_slide_ids.extend(slide_id)
+    
+    # Concatenate all batches
+    if task_setting != 'survival':
+        all_probs = np.vstack(all_probs)      # [total_samples, n_classes]
+        all_labels = np.vstack(all_labels)    # [total_samples, n_classes]
+    
+    # Create records for metric calculation
+    records = {
+        'prob': all_probs,
+        'label': all_labels,
+        'slide_id': all_slide_ids,
+        'loss': total_loss / num_batches
+    }
+    
+    # Calculate metrics
     records.update(release_nested_dict(calculate_metrics_with_task_cfg(records['prob'], 
                                                                        records['label'], 
                                                                        args.task_config)))
     
-    records['loss'] = records['loss'] / len(loader)
-
     if task_setting == 'multi_label':
         info = 'Epoch: {}, Loss: {:.4f}, Micro AUROC: {:.4f}, Macro AUROC: {:.4f}, Micro AUPRC: {:.4f}, Macro AUPRC: {:.4f}'.format(epoch, records['loss'], records['micro_auroc'], records['macro_auroc'], records['micro_auprc'], records['macro_auprc'])
     elif task_setting =='regression':

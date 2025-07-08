@@ -108,47 +108,56 @@ def pad_tensors(imgs, coords):
 
 
 def slide_collate_fn(samples):
-    
     """
-    支持单模型和多模型：batch=[sample1, sample2, ...]，每个sample的imgs_list长度可为1或>1
+    支持单模型和多模型的批处理：batch=[sample1, sample2, ...]，每个sample的imgs_list长度可为1或>1
+    现在支持batch_size > 1
     """
+    if len(samples) == 0:
+        return {}
+        
     n_models = len(samples[0]['imgs_list'])
     batch_size = len(samples)
     
-    # 逐模型分别pad、stack
-    imgs_lists = [[] for _ in range(n_models)]
-    coords_lists = [[] for _ in range(n_models)]
-    img_lens_lists = [[] for _ in range(n_models)]
+    # 逐模型分别收集、pad、stack
+    batch_imgs_lists = [[] for _ in range(n_models)]
+    batch_coords_lists = [[] for _ in range(n_models)]
+    batch_img_lens_lists = [[] for _ in range(n_models)]
+    
     for s in samples:
         for m in range(n_models):
-            imgs_lists[m].append(s['imgs_list'][m])
-            coords_lists[m].append(s['coords_list'][m])
-            img_lens_lists[m].append(s['img_lens_list'][m])
-    # 分别pad
+            batch_imgs_lists[m].append(s['imgs_list'][m])
+            batch_coords_lists[m].append(s['coords_list'][m])
+            batch_img_lens_lists[m].append(s['img_lens_list'][m])
+    
+    # 分别pad每个模型的数据
     pad_imgs_list, pad_coords_list, pad_mask_list = [], [], []
     for m in range(n_models):
-        pad_imgs, pad_coords, pad_mask = pad_tensors(imgs_lists[m], coords_lists[m])
+        pad_imgs, pad_coords, pad_mask = pad_tensors(batch_imgs_lists[m], batch_coords_lists[m])
         pad_imgs_list.append(pad_imgs)       # [B, T, D]
         pad_coords_list.append(pad_coords)   # [B, T, 2]
         pad_mask_list.append(pad_mask)       # [B, T]
+    
+    # 收集标签和slide_id
     label_list = [s['labels'] for s in samples]
     slide_id_list = [s['slide_id'] for s in samples]
-    labels = torch.stack(label_list)
-    # img_lens: [n_models][batch_size]，可选是否用
+    labels = torch.stack(label_list)  # [B, 1] or [B, n_classes]
+    
     data_dict = {
         'imgs_list': pad_imgs_list,            # list of [B, T, D]
-        'coords_list': pad_coords_list,
-        'pad_mask_list': pad_mask_list,
-        'img_lens_list': img_lens_lists,       # list of [B]
-        'labels': labels,
-        'slide_id': slide_id_list,
+        'coords_list': pad_coords_list,        # list of [B, T, 2]
+        'pad_mask_list': pad_mask_list,        # list of [B, T]
+        'img_lens_list': batch_img_lens_lists, # list of [B]
+        'labels': labels,                      # [B, 1] or [B, n_classes]
+        'slide_id': slide_id_list,            # list of B slide_ids
     }
+    
     # 若只有单一模型，自动降维并兼容老接口
     if n_models == 1:
         data_dict['imgs'] = pad_imgs_list[0]
         data_dict['coords'] = pad_coords_list[0]
         data_dict['pad_mask'] = pad_mask_list[0]
-        data_dict['img_lens'] = img_lens_lists[0]
+        data_dict['img_lens'] = batch_img_lens_lists[0]
+    
     return data_dict
 
 

@@ -228,3 +228,7 @@ if __name__ == '__main__':
     print('Results saved in: {}'.format(os.path.join(args.save_dir, 'summary.csv')))
     print('Done!')
 
+
+
+#CUDA_VISIBLE_DEVICES=3  python main.py --task_cfg_path "task_configs/subtype/BRACS_COARSE.yaml" --dataset_csv "dataset_csv/subtype/BRACS_COARSE.csv" --root_path "/data4/embedding/BRACS" --pretrain_model_type "slide_level" --tuning_method "MIL" --lr "0.0001" --batch_size "1" --save_dir "./output" --fusion_type "moe"
+#python main.py --task_cfg_path "task_configs/subtype/BRACS_COARSE.yaml" --dataset_csv "dataset_csv/subtype/BRACS_COARSE.csv" --root_path "/data4/embedding/BRACS" --pretrain_model_type "slide_level" --tuning_method "MIL" --lr "0.0001" --batch_size "1" --save_dir "./output" --fusion_type "none" --pretrain_model UNI --input_dim 1024

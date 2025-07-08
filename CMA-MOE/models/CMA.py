@@ -92,118 +92,141 @@ class LSTCWA(nn.Module):
         
     def forward(self, feats, coords, mask, return_alpha=False):
         """
-        return
-          Z      : [L, D]  压缩 token
-          alpha_list (可选) : list[(α, p)]，其中
-                  α : [L, N] 稀疏注意力权重 (segment × patch)
-                  p : [N, 2] 对应 patch 坐标，用于损失
+        Updated to handle batch processing
+        Args:
+            feats: [B, N, D] - batch of feature sequences
+            coords: [B, N, 2] - batch of coordinate sequences  
+            mask: [B, N] - batch of padding masks
+        Returns:
+            Z: [B, L, D] - batch of compressed tokens
         """
-        # Handle edge case: all patches are masked
-        if mask.all():
-            return self.z.clone()
+        B, N, D = feats.shape
+        device = feats.device
         
-        feats = feats[~mask]     # [N, D]
-        coords= coords[~mask]    # [N, 2]
-        N, D  = feats.shape
-
-
-        if N == 0:
-            return self.z.clone()
-
-        # Normalize input features to prevent overflow
-        feats = F.layer_norm(feats, feats.shape[-1:])
+        # Process each sample in the batch
+        batch_outputs = []
+        batch_alphas = [] if return_alpha else None
         
-        # Normalize coordinates to prevent large position bias
-        coords_mean = coords.mean(dim=0, keepdim=True)
-        coords_std = coords.std(dim=0, keepdim=True) + 1e-8  # Add epsilon to prevent division by zero
-        coords = (coords - coords_mean) / coords_std
-
-        seg_id = torch.div(torch.arange(N, device=feats.device)*self.L,
-                           N, rounding_mode='floor')   # [N]
-        z_out, alpha_collect = [], []
-
-        for l in range(self.L):
-            idx = (seg_id == l)
-            if idx.sum() == 0:
-                z_out.append(self.z[l])
-                if return_alpha:
-                    alpha_collect.append((torch.zeros(N, device=feats.device),
-                                           coords))   # 空 α
-                continue
-
-            feats_seg  = feats[idx]
-            coords_seg = coords[idx]           # [T_seg, 2]
-            # 记录 segment → 原 patch 映射索引
-            patch_global_idx = torch.nonzero(idx).squeeze(1)  # [T_seg]
-
-            z_l_acc = None
-            attn_acc = []
-            num_windows = 0
+        for b in range(B):
+            # Extract single sample
+            sample_feats = feats[b]      # [N, D]
+            sample_coords = coords[b]    # [N, 2]
+            sample_mask = mask[b]        # [N]
             
-            for start in range(0, feats_seg.size(0), self.s):
-                slc = slice(start, min(start+self.w, feats_seg.size(0)))
-                f_win  = feats_seg[slc]                    # [w', D]
-                c_win  = coords_seg[slc]                   # [w', 2]
-
-                # Skip empty windows
-                if f_win.size(0) == 0:
+            # Handle edge case: all patches are masked
+            if sample_mask.all():
+                sample_output = self.z.clone()  # [L, D]
+                batch_outputs.append(sample_output)
+                if return_alpha:
+                    batch_alphas.append((torch.zeros(self.L, N, device=device), sample_coords))
+                continue
+            
+            # Process unmasked patches
+            valid_feats = sample_feats[~sample_mask]     # [N_valid, D]
+            valid_coords = sample_coords[~sample_mask]   # [N_valid, 2]
+            N_valid = valid_feats.shape[0]
+            
+            if N_valid == 0:
+                sample_output = self.z.clone()  # [L, D]
+                batch_outputs.append(sample_output)
+                if return_alpha:
+                    batch_alphas.append((torch.zeros(self.L, N, device=device), sample_coords))
+                continue
+            
+            # Normalize input features to prevent overflow
+            valid_feats = F.layer_norm(valid_feats, valid_feats.shape[-1:])
+            
+            # Normalize coordinates to prevent large position bias
+            coords_mean = valid_coords.mean(dim=0, keepdim=True)
+            coords_std = valid_coords.std(dim=0, keepdim=True) + 1e-8
+            valid_coords = (valid_coords - coords_mean) / coords_std
+            
+            # Segment processing
+            seg_id = torch.div(torch.arange(N_valid, device=device) * self.L,
+                              N_valid, rounding_mode='floor')   # [N_valid]
+            z_out, alpha_collect = [], []
+            
+            for l in range(self.L):
+                idx = (seg_id == l)
+                if idx.sum() == 0:
+                    z_out.append(self.z[l])
+                    if return_alpha:
+                        alpha_collect.append((torch.zeros(N_valid, device=device), valid_coords))
                     continue
-
-                q = self.q(self.z[l:l+1])                  # [1, D]
-                k = self.k(f_win)                          # [w', D]
-                v = self.v(f_win)
                 
-                # Compute position bias more carefully
-                c_mean = c_win.mean(0, keepdim=True)
-                pos_bias = self.pos_mlp(c_win - c_mean)
-                k = k + pos_bias
-
-                # Stable attention computation with temperature scaling
-                temperature = math.sqrt(self.z.size(1))
-                attn_logits = (q @ k.T) / temperature
+                feats_seg = valid_feats[idx]
+                coords_seg = valid_coords[idx]
+                patch_global_idx = torch.nonzero(idx).squeeze(1)
                 
-                # Clip logits to prevent overflow in softmax
-                attn_logits = torch.clamp(attn_logits, min=-10, max=10)
-                attn = F.softmax(attn_logits, dim=-1)
-
-                z_win = attn @ v                             
+                z_l_acc = None
+                attn_acc = []
+                num_windows = 0
                 
-                if z_l_acc is None:
-                    z_l_acc = z_win.squeeze(0)
+                for start in range(0, feats_seg.size(0), self.s):
+                    slc = slice(start, min(start + self.w, feats_seg.size(0)))
+                    f_win = feats_seg[slc]
+                    c_win = coords_seg[slc]
+                    
+                    if f_win.size(0) == 0:
+                        continue
+                    
+                    q = self.q(self.z[l:l+1])  # [1, D]
+                    k = self.k(f_win)          # [w', D]
+                    v = self.v(f_win)
+                    
+                    c_mean = c_win.mean(0, keepdim=True)
+                    pos_bias = self.pos_mlp(c_win - c_mean)
+                    k = k + pos_bias
+                    
+                    # Stable attention computation
+                    temperature = math.sqrt(self.z.size(1))
+                    attn_logits = (q @ k.T) / temperature
+                    attn_logits = torch.clamp(attn_logits, min=-10, max=10)
+                    attn = F.softmax(attn_logits, dim=-1)
+                    
+                    z_win = attn @ v
+                    
+                    if z_l_acc is None:
+                        z_l_acc = z_win.squeeze(0)
+                    else:
+                        z_l_acc += z_win.squeeze(0)
+                    num_windows += 1
+                    
+                    if return_alpha:
+                        full_alpha = torch.zeros(N_valid, device=device)
+                        full_alpha[patch_global_idx[slc]] = attn.squeeze(0)
+                        attn_acc.append(full_alpha)
+                
+                # Proper averaging
+                if num_windows > 0:
+                    z_l_acc = z_l_acc / num_windows
                 else:
-                    z_l_acc += z_win.squeeze(0)
-                num_windows += 1
+                    z_l_acc = self.z[l]
+                
+                z_out.append(z_l_acc)
                 
                 if return_alpha:
-                    full_alpha = torch.zeros(N, device=feats.device)
-                    full_alpha[patch_global_idx[slc]] = attn.squeeze(0)
-                    attn_acc.append(full_alpha)
-
-            # Proper averaging
-            if num_windows > 0:
-                z_l_acc = z_l_acc / num_windows
-            else:
-                z_l_acc = self.z[l]
-                
-            z_out.append(z_l_acc)
+                    if len(attn_acc) > 0:
+                        seg_alpha = torch.stack(attn_acc).mean(0)
+                    else:
+                        seg_alpha = torch.zeros(N_valid, device=device)
+                    alpha_collect.append((seg_alpha, valid_coords))
+            
+            Z = torch.stack(z_out, 0)  # [L, D]
+            sample_output = self.proj_out(Z)
+            batch_outputs.append(sample_output)
             
             if return_alpha:
-                if len(attn_acc) > 0:
-                    seg_alpha = torch.stack(attn_acc).mean(0)
-                else:
-                    seg_alpha = torch.zeros(N, device=feats.device)
-                alpha_collect.append((seg_alpha, coords)) 
-
-        Z = torch.stack(z_out, 0)  # [L, D]
-
+                alpha_map = torch.stack([a for a, _ in alpha_collect], 0)
+                batch_alphas.append((alpha_map, valid_coords))
+        
+        # Stack batch outputs
+        batch_Z = torch.stack(batch_outputs, 0)  # [B, L, D]
+        
         if return_alpha:
-            # 拼成 [L, N]
-            alpha_map = torch.stack([a for a,_ in alpha_collect], 0)
-            return self.proj_out(Z), (alpha_map, coords) 
+            return batch_Z, batch_alphas
         else:
-            return self.proj_out(Z)
-
-
+            return batch_Z
 
 class HierarchicalMemoryMoE(nn.Module):
     def __init__(self, num_experts, token_dim, memory_size, num_memory_layers, gamma=0.1):
@@ -326,7 +349,7 @@ class HierarchicalMemoryMoE(nn.Module):
         return fused_output, gate_weights
 
 
-class MultiModelFusionSystem(nn.Module):
+class  MultiModelFusionSystem(nn.Module):
     """
     完整的多模型融合系统:
     1. MultiDimAligner: 维度对齐
@@ -374,20 +397,20 @@ class MultiModelFusionSystem(nn.Module):
         # 3. 融合策略
         if self.fusion_type == "moe":
             self.fusion = HierarchicalMemoryMoE(num_experts, token_dim, memory_size, num_memory_layers, gamma)
-        elif self.fusion_type == "concat":
-            self.fusion = nn.Sequential(
-                nn.Linear(num_experts * token_dim, mlp_hidden),
-                nn.ReLU(),
-                nn.Linear(mlp_hidden, token_dim)
-            )
-        elif self.fusion_type == "self_attention":
-            self.attn = nn.MultiheadAttention(token_dim, attn_heads, batch_first=True)
-            self.proj = nn.Linear(num_experts * token_dim, token_dim)
-        elif self.fusion_type == "cross_attention":
-            self.cross_attn = nn.MultiheadAttention(token_dim, attn_heads, batch_first=True)
-            self.proj = nn.Linear(token_dim, token_dim)
-        else:
-            raise ValueError(f"Unknown fusion_type: {fusion_type}")
+        # elif self.fusion_type == "concat":
+        #     self.fusion = nn.Sequential(
+        #         nn.Linear(num_experts * token_dim, mlp_hidden),
+        #         nn.ReLU(),
+        #         nn.Linear(mlp_hidden, token_dim)
+        #     )
+        # elif self.fusion_type == "self_attention":
+        #     self.attn = nn.MultiheadAttention(token_dim, attn_heads, batch_first=True)
+        #     self.proj = nn.Linear(num_experts * token_dim, token_dim)
+        # elif self.fusion_type == "cross_attention":
+        #     self.cross_attn = nn.MultiheadAttention(token_dim, attn_heads, batch_first=True)
+        #     self.proj = nn.Linear(token_dim, token_dim)
+        # else:
+        #     raise ValueError(f"Unknown fusion_type: {fusion_type}")
         
         # 4. MIL分类头 - Remove softmax for raw logits
         self.mil_head = nn.Sequential(
@@ -401,81 +424,90 @@ class MultiModelFusionSystem(nn.Module):
     def forward(self, feats_list, coords_list=None, pad_mask_list=None):
         """
         Args:
-            feats_list: list of [N_i, D_i] tensors from different backbone models
-            coords_list: list of [N_i, 2] coordinate tensors (optional)
-            pad_mask_list: list of [N_i] boolean masks (optional)
+            feats_list: list of [B, N_i, D_i] tensors from different backbone models
+            coords_list: list of [B, N_i, 2] coordinate tensors (optional)
+            pad_mask_list: list of [B, N_i] boolean masks (optional)
         Returns:
             logits: [B, n_classes] classification logits
         """
-        compressed_tokens = []
+        B = feats_list[0].shape[0]  # batch size
+        batch_logits = []
         
-        # Step 1 & 2: 维度对齐 + 序列压缩
-        for i, feats in enumerate(feats_list):
-            # Input validation
-            if feats.numel() == 0:
-                print(f"Warning: Empty feature tensor for model {i}")
-                # Create dummy compressed tokens
-                dummy_tokens = torch.zeros(self.num_tokens, self.token_dim, 
-                                         device=feats.device, dtype=feats.dtype)
-                compressed_tokens.append(dummy_tokens)
-                continue
+        # Process each sample in the batch
+        for b in range(B):
+            # Extract single sample from batch
+            sample_feats_list = [feats[b] for feats in feats_list]  # list of [N_i, D_i]
+            sample_coords_list = [coords[b] for coords in coords_list] if coords_list is not None else None
+            sample_pad_mask_list = [mask[b] for mask in pad_mask_list] if pad_mask_list is not None else None
             
-            # 维度对齐 - 使用预定义的对齐器
-            aligned_feats = self.aligner(feats, backbone_idx=i)  # [N_i, D_i] -> [N_i, token_dim]
+            compressed_tokens = []
             
-            # 序列压缩
-            if coords_list is not None and pad_mask_list is not None and i < len(coords_list) and i < len(pad_mask_list):
-                coords = coords_list[i]
-                pad_mask = pad_mask_list[i]
+            # Step 1 & 2: 维度对齐 + 序列压缩
+            for i, feats in enumerate(sample_feats_list):
+                # Input validation
+                if feats.numel() == 0:
+                    print(f"Warning: Empty feature tensor for model {i} in batch {b}")
+                    dummy_tokens = torch.zeros(self.num_tokens, self.token_dim, 
+                                             device=feats.device, dtype=feats.dtype)
+                    compressed_tokens.append(dummy_tokens)
+                    continue
                 
-                # Validate coordinates and masks
-                if coords.numel() == 0 or pad_mask.numel() == 0:
-                    print(f"Warning: Empty coords or mask for model {i}")
-                    pooled = aligned_feats.mean(dim=0)
-                    compressed = pooled.unsqueeze(0).repeat(self.num_tokens, 1)
-                else:
-                    try:
-                        compressed = self.compressors[i](aligned_feats, coords, pad_mask)
-                    except Exception as e:
-                        print(f"Error in compressor {i}: {e}")
-                        # Fallback to simple pooling
+                # 维度对齐
+                aligned_feats = self.aligner(feats, backbone_idx=i)  # [N_i, D_i] -> [N_i, token_dim]
+                
+                # 序列压缩
+                if (sample_coords_list is not None and sample_pad_mask_list is not None and 
+                    i < len(sample_coords_list) and i < len(sample_pad_mask_list)):
+                    coords = sample_coords_list[i]
+                    pad_mask = sample_pad_mask_list[i]
+                    
+                    if coords.numel() == 0 or pad_mask.numel() == 0:
                         pooled = aligned_feats.mean(dim=0)
                         compressed = pooled.unsqueeze(0).repeat(self.num_tokens, 1)
-            else:
-                # 如果没有坐标信息，使用简单的平均池化并复制到num_tokens
-                pooled = aligned_feats.mean(dim=0)  # [token_dim]
-                compressed = pooled.unsqueeze(0).repeat(self.num_tokens, 1)  # [num_tokens, token_dim]
-
+                    else:
+                        try:
+                            # Add batch dimension for LSTCWA
+                            feats_batch = aligned_feats.unsqueeze(0)  # [1, N_i, token_dim]
+                            coords_batch = coords.unsqueeze(0)        # [1, N_i, 2]
+                            mask_batch = pad_mask.unsqueeze(0)        # [1, N_i]
+                            
+                            compressed_batch = self.compressors[i](feats_batch, coords_batch, mask_batch)
+                            compressed = compressed_batch.squeeze(0)  # [num_tokens, token_dim]
+                        except Exception as e:
+                            print(f"Error in compressor {i}: {e}")
+                            pooled = aligned_feats.mean(dim=0)
+                            compressed = pooled.unsqueeze(0).repeat(self.num_tokens, 1)
+                else:
+                    pooled = aligned_feats.mean(dim=0)
+                    compressed = pooled.unsqueeze(0).repeat(self.num_tokens, 1)
+                
+                compressed_tokens.append(compressed)
             
-            compressed_tokens.append(compressed)
+            # Step 3: 融合策略
+            if self.fusion_type == "moe":
+                fused_output, gate_weights = self.fusion(compressed_tokens)
+            elif self.fusion_type == "concat":
+                tokens_cat = torch.cat(compressed_tokens, dim=-1)
+                fused_output = self.fusion(tokens_cat)
+            elif self.fusion_type == "self_attention":
+                tokens_stack = torch.stack(compressed_tokens, dim=1)
+                attn_out, _ = self.attn(tokens_stack, tokens_stack, tokens_stack)
+                attn_out = attn_out.reshape(attn_out.shape[0], -1)
+                fused_output = self.proj(attn_out)
+            elif self.fusion_type == "cross_attention":
+                query = compressed_tokens[0].unsqueeze(1)
+                keys = torch.stack(compressed_tokens[1:], dim=1)
+                attn_out, _ = self.cross_attn(query, keys, keys)
+                fused_output = self.proj(attn_out.squeeze(1))
+            
+            # Step 4: MIL聚合 + 分类
+            pooled_features = fused_output.mean(dim=0)
+            logits = self.mil_head(pooled_features)
+            batch_logits.append(logits)
         
-        # Step 3: 融合策略
-        if self.fusion_type == "moe":
-            fused_output, gate_weights = self.fusion(compressed_tokens)  # [num_tokens, token_dim]
-        elif self.fusion_type == "concat":
-            # 在最后一个维度concat: [num_experts, num_tokens, token_dim] -> [num_tokens, num_experts*token_dim]
-            tokens_cat = torch.cat(compressed_tokens, dim=-1)  # [num_tokens, num_experts*token_dim]
-            fused_output = self.fusion(tokens_cat)  # [num_tokens, token_dim]
-        elif self.fusion_type == "self_attention":
-            # 堆叠为 [num_tokens, num_experts, token_dim]
-            tokens_stack = torch.stack(compressed_tokens, dim=1)  # [num_tokens, num_experts, token_dim]
-            attn_out, _ = self.attn(tokens_stack, tokens_stack, tokens_stack)  # [num_tokens, num_experts, token_dim]
-            attn_out = attn_out.reshape(attn_out.shape[0], -1)  # [num_tokens, num_experts*token_dim]
-            fused_output = self.proj(attn_out)  # [num_tokens, token_dim]
-        elif self.fusion_type == "cross_attention":
-            # 以第一个模型为query，其余为key/value
-            query = compressed_tokens[0].unsqueeze(1)  # [num_tokens, 1, token_dim]
-            keys = torch.stack(compressed_tokens[1:], dim=1)  # [num_tokens, num_experts-1, token_dim]
-            attn_out, _ = self.cross_attn(query, keys, keys)  # [num_tokens, 1, token_dim]
-            fused_output = self.proj(attn_out.squeeze(1))  # [num_tokens, token_dim]
-        
-        # Step 4: MIL聚合 + 分类
-        # 对所有tokens进行平均池化，然后分类
-        pooled_features = fused_output.mean(dim=0)  # [token_dim]
-        logits = self.mil_head(pooled_features)  # [n_classes]
-        
-        return logits.unsqueeze(0)  # 添加batch维度: [1, n_classes]
-
+        # Stack all batch logits
+        batch_logits = torch.stack(batch_logits, 0)  # [B, n_classes]
+        return batch_logits
 
 class SingleModelBaseline(nn.Module):
     """
@@ -510,26 +542,31 @@ class SingleModelBaseline(nn.Module):
     def forward(self, feats, coords=None, pad_mask=None):
         """
         Args:
-            feats: [N, D] feature tensor
-            coords: [N, 2] coordinate tensor (unused for linear head)
-            pad_mask: [N] boolean mask (unused for linear head)
+            feats: [B, N, D] feature tensor batch
+            coords: [B, N, 2] coordinate tensor batch (optional)
+            pad_mask: [B, N] boolean mask batch (optional)
+        Returns:
+            logits: [B, n_classes] classification logits
         """
-        # 维度对齐 - 使用预定义的对齐器
-        aligned_feats = self.aligner(feats, backbone_idx=0)  # [N, D] -> [N, token_dim]
+        B = feats.shape[0]
+        batch_logits = []
         
-        # 聚合特征
-        if self.head_type == "linear":
-            # 简单平均池化
+        for b in range(B):
+            # Extract single sample
+            sample_feats = feats[b]  # [N, D]
+            
+            # 维度对齐
+            aligned_feats = self.aligner(sample_feats, backbone_idx=0)
+            
+            # 聚合特征
             pooled_features = aligned_feats.mean(dim=0)  # [token_dim]
-        elif self.head_type == "mil":
-            # MIL聚合 (这里简化为平均池化，可以扩展为注意力机制)
-            pooled_features = aligned_feats.mean(dim=0)  # [token_dim]
+            
+            # 分类
+            logits = self.head(pooled_features)  # [n_classes]
+            batch_logits.append(logits)
         
-        # 分类
-        logits = self.head(pooled_features)  # [n_classes]
-        
-        return logits.unsqueeze(0)  # 添加batch维度: [1, n_classes]
-
+        batch_logits = torch.stack(batch_logits, 0)  # [B, n_classes]
+        return batch_logits
 
 class SimpleFusionBaseline(nn.Module):
     """
@@ -580,35 +617,42 @@ class SimpleFusionBaseline(nn.Module):
     def forward(self, feats_list, coords_list=None, pad_mask_list=None):
         """
         Args:
-            feats_list: list of [N_i, D_i] tensors from different backbone models
+            feats_list: list of [B, N_i, D_i] tensors from different backbone models
+        Returns:
+            logits: [B, n_classes] classification logits
         """
-        # 维度对齐 + 平均池化
-        pooled_features = []
-        for i, feats in enumerate(feats_list):
-            aligned_feats = self.aligner(feats, backbone_idx=i)  # [N_i, D_i] -> [N_i, token_dim]
-            pooled = aligned_feats.mean(dim=0)  # [token_dim]
-            pooled_features.append(pooled)
+        B = feats_list[0].shape[0]
+        batch_logits = []
         
-        # 融合策略
-        if self.fusion_type == "concat":
-            # 直接concat
-            fused_features = torch.cat(pooled_features, dim=0)  # [num_experts * token_dim]
-            fused_output = self.fusion(fused_features)  # [token_dim]
-        elif self.fusion_type == "self_attention":
-            # 堆叠为 [1, num_experts, token_dim]
-            features_stack = torch.stack(pooled_features, dim=0).unsqueeze(0)  # [1, num_experts, token_dim]
-            attn_out, _ = self.attn(features_stack, features_stack, features_stack)  # [1, num_experts, token_dim]
-            attn_out = attn_out.squeeze(0).reshape(-1)  # [num_experts * token_dim]
-            fused_output = self.proj(attn_out)  # [token_dim]
-        elif self.fusion_type == "cross_attention":
-            # 以第一个模型为query，其余为key/value
-            query = pooled_features[0].unsqueeze(0).unsqueeze(0)  # [1, 1, token_dim]
-            keys = torch.stack(pooled_features[1:], dim=0).unsqueeze(0)  # [1, num_experts-1, token_dim]
-            attn_out, _ = self.cross_attn(query, keys, keys)  # [1, 1, token_dim]
-            fused_output = self.proj(attn_out.squeeze(0).squeeze(0))  # [token_dim]
+        for b in range(B):
+            # Extract single sample from batch
+            sample_feats_list = [feats[b] for feats in feats_list]
+            
+            # 维度对齐 + 平均池化
+            pooled_features = []
+            for i, feats in enumerate(sample_feats_list):
+                aligned_feats = self.aligner(feats, backbone_idx=i)
+                pooled = aligned_feats.mean(dim=0)
+                pooled_features.append(pooled)
+            
+            # 融合策略
+            if self.fusion_type == "concat":
+                fused_features = torch.cat(pooled_features, dim=0)
+                fused_output = self.fusion(fused_features)
+            elif self.fusion_type == "self_attention":
+                features_stack = torch.stack(pooled_features, dim=0).unsqueeze(0)
+                attn_out, _ = self.attn(features_stack, features_stack, features_stack)
+                attn_out = attn_out.squeeze(0).reshape(-1)
+                fused_output = self.proj(attn_out)
+            elif self.fusion_type == "cross_attention":
+                query = pooled_features[0].unsqueeze(0).unsqueeze(0)
+                keys = torch.stack(pooled_features[1:], dim=0).unsqueeze(0)
+                attn_out, _ = self.cross_attn(query, keys, keys)
+                fused_output = self.proj(attn_out.squeeze(0).squeeze(0))
+            
+            # 分类
+            logits = self.head(fused_output)
+            batch_logits.append(logits)
         
-        # 分类
-        logits = self.head(fused_output)  # [n_classes]
-        
-        return logits.unsqueeze(0)  # 添加batch维度: [1, n_classes]
-        return logits.unsqueeze(0)  # 添加batch维度: [1, n_classes]
+        batch_logits = torch.stack(batch_logits, 0)  # [B, n_classes]
+        return batch_logits

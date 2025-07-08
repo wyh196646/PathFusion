@@ -30,7 +30,7 @@ def get_finetune_params():
     parser.add_argument('--seed',           type=int, default=0, help='Random seed')
     parser.add_argument('--epochs',         type=int, default=25, help='Number of training epochs')
     parser.add_argument('--warmup_epochs',  type=int, default=0, help='Number of warmup epochs')
-    parser.add_argument('--batch_size',     type=int, default=1, help='Current version only supports batch size of 1')
+    parser.add_argument('--batch_size',     type=int, default=1, help='Batch size for training and evaluation')
     parser.add_argument('--lr',             type=float, default=0.0001, help='Learning rate')
     parser.add_argument('--blr',            type=float, default=4e-3, help='Base learning rate, will caculate the learning rate based on batch size')
     parser.add_argument('--min_lr',         type=float, default=1e-6, help='Minimum learning rate')
