@@ -595,11 +595,12 @@ class SimpleFusionBaseline(nn.Module):
             self.fusion = nn.Sequential(
                 nn.Linear(num_experts * token_dim, mlp_hidden),
                 nn.ReLU(),
+                nn.Dropout(0.1),
                 nn.Linear(mlp_hidden, token_dim)
             )
         elif self.fusion_type == "self_attention":
             self.attn = nn.MultiheadAttention(token_dim, attn_heads, batch_first=True)
-            self.proj = nn.Linear(num_experts * token_dim, token_dim)
+            self.proj = nn.Linear(token_dim, token_dim)
         elif self.fusion_type == "cross_attention":
             self.cross_attn = nn.MultiheadAttention(token_dim, attn_heads, batch_first=True)
             self.proj = nn.Linear(token_dim, token_dim)
@@ -626,32 +627,43 @@ class SimpleFusionBaseline(nn.Module):
         
         for b in range(B):
             # Extract single sample from batch
-            sample_feats_list = [feats[b] for feats in feats_list]
+            sample_feats_list = [feats[b] for feats in feats_list]  # list of [N_i, D_i]
             
             # 维度对齐 + 平均池化
             pooled_features = []
             for i, feats in enumerate(sample_feats_list):
-                aligned_feats = self.aligner(feats, backbone_idx=i)
-                pooled = aligned_feats.mean(dim=0)
+                if feats.numel() == 0:
+                    # Handle empty features
+                    pooled = torch.zeros(self.token_dim, device=feats.device, dtype=feats.dtype)
+                else:
+                    aligned_feats = self.aligner(feats, backbone_idx=i)  # [N_i, D_i] -> [N_i, token_dim]
+                    pooled = aligned_feats.mean(dim=0)  # [token_dim]
                 pooled_features.append(pooled)
             
             # 融合策略
             if self.fusion_type == "concat":
+                # Concatenate all pooled features: [num_experts * token_dim]
                 fused_features = torch.cat(pooled_features, dim=0)
-                fused_output = self.fusion(fused_features)
+                fused_output = self.fusion(fused_features)  # [token_dim]
             elif self.fusion_type == "self_attention":
-                features_stack = torch.stack(pooled_features, dim=0).unsqueeze(0)
-                attn_out, _ = self.attn(features_stack, features_stack, features_stack)
-                attn_out = attn_out.squeeze(0).reshape(-1)
-                fused_output = self.proj(attn_out)
+                # Stack features for self-attention: [num_experts, token_dim]
+                features_stack = torch.stack(pooled_features, dim=0).unsqueeze(0)  # [1, num_experts, token_dim]
+                attn_out, _ = self.attn(features_stack, features_stack, features_stack)  # [1, num_experts, token_dim]
+                attn_out = attn_out.squeeze(0)  # [num_experts, token_dim]
+                fused_output = self.proj(attn_out.mean(dim=0))  # Average and project: [token_dim]
             elif self.fusion_type == "cross_attention":
-                query = pooled_features[0].unsqueeze(0).unsqueeze(0)
-                keys = torch.stack(pooled_features[1:], dim=0).unsqueeze(0)
-                attn_out, _ = self.cross_attn(query, keys, keys)
-                fused_output = self.proj(attn_out.squeeze(0).squeeze(0))
+                # Use first model as query, others as key/value
+                query = pooled_features[0].unsqueeze(0).unsqueeze(0)  # [1, 1, token_dim]
+                if len(pooled_features) > 1:
+                    keys_values = torch.stack(pooled_features[1:], dim=0).unsqueeze(0)  # [1, num_experts-1, token_dim]
+                    attn_out, _ = self.cross_attn(query, keys_values, keys_values)  # [1, 1, token_dim]
+                    fused_output = self.proj(attn_out.squeeze(0).squeeze(0))  # [token_dim]
+                else:
+                    # Only one model, use it directly
+                    fused_output = self.proj(pooled_features[0])  # [token_dim]
             
             # 分类
-            logits = self.head(fused_output)
+            logits = self.head(fused_output)  # [n_classes]
             batch_logits.append(logits)
         
         batch_logits = torch.stack(batch_logits, 0)  # [B, n_classes]

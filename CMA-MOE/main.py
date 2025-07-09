@@ -27,7 +27,7 @@ if __name__ == '__main__':
         use_base_models = [args.pretrain_model]
         num_experts = 1
         # 单模型情况下，取第一个维度
-        base_model_dims = [args.base_model_feature_dims[0]] if hasattr(args, 'base_model_feature_dims') else [args.fused_feature_dim]
+        base_model_dims = [args.input_dim]
     else:
         use_base_models = args.base_models
         num_experts = len(use_base_models)
@@ -125,9 +125,14 @@ if __name__ == '__main__':
     dataset = pd.read_csv(args.dataset_csv) # read the dataset csv file
         
     prediction_save_dir = os.path.join(args.save_dir,'prediction_results')
+    prediction_file = os.path.join(prediction_save_dir, 'val_predict.csv')
+    if os.path.exists(prediction_file):
+        #jump this exucution
+        print(f"Prediction file {prediction_file} already exists. Skipping execution.")
+        sys.exit(0)
     os.makedirs(prediction_save_dir,exist_ok=True)
     
-
+    
     DatasetClass = SlideDataset
     
     
