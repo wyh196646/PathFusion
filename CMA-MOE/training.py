@@ -11,15 +11,63 @@ import wandb
 os.environ["WANDB_API_KEY"] = '6ebb1c769075243eb73a32c4f9f7011ddd41f20a'
 
 import torch
+import torch.nn as nn
 import numpy as np
 import torch.utils.tensorboard as tensorboard
-
+import torch.nn.functional as F
 from metrics import calculate_metrics_with_task_cfg
 from finetune_utils import (
     get_optimizer, get_loss_function, Monitor_Score, get_records_array,
     log_writer, adjust_learning_rate, release_nested_dict,
     initiate_mil_model, initiate_linear_model
 )
+
+class CrossExpertMemoryContrastiveLoss(nn.Module):
+    def __init__(self, temperature=0.1):
+        super().__init__()
+        self.temperature = temperature
+
+    def forward(self, expert_outputs):
+        M = len(expert_outputs)
+        if M <= 1:
+            return torch.tensor(0.0, device=expert_outputs[0].device, requires_grad=True)
+
+        loss = 0
+        for m in range(M):
+            pos = expert_outputs[m]
+            neg_list = [expert_outputs[n] for n in range(M) if n != m]
+            if len(neg_list) == 0:
+                continue  # 增加保护逻辑
+            neg = torch.cat(neg_list, dim=0)
+            pos_sim = torch.exp(torch.sum(pos * pos, dim=-1) / self.temperature)
+            neg_sim = torch.exp(torch.mm(pos, neg.T) / self.temperature).sum(dim=-1)
+            loss += -torch.log(pos_sim / (pos_sim + neg_sim + 1e-8)).mean()
+
+        loss = loss / M
+        return loss
+
+
+class AdaptiveInfoPreservationLoss(nn.Module):
+    def __init__(self, temperature=0.1):
+        super().__init__()
+        self.temperature = temperature
+        self.cosine_sim = nn.CosineSimilarity(dim=-1)
+
+    def forward(self, pooled_features, positive_features):
+        # pooled_features: [B, D]
+        # positive_features: [B, D]
+        B = pooled_features.size(0)
+
+        pooled_features_norm = F.normalize(pooled_features, dim=-1)
+        positive_features_norm = F.normalize(positive_features, dim=-1)
+
+        sim_matrix = torch.matmul(pooled_features_norm, positive_features_norm.T) / self.temperature
+        labels = torch.arange(B, device=pooled_features.device)
+
+        loss = F.cross_entropy(sim_matrix, labels)
+        return loss
+
+
 
 def train(dataloader, fold, args, fusion_model=None):
     train_loader, val_loader, test_loader = dataloader
@@ -59,7 +107,7 @@ def train(dataloader, fold, args, fusion_model=None):
     monitor = Monitor_Score()
     fp16_scaler = None
     if args.fp16:
-        fp16_scaler = torch.cuda.amp.GradScaler()
+        fp16_scaler = torch.amp.GradScaler('cuda')
         print('Using fp16 training')
 
     print('Training on {} samples'.format(len(train_loader.dataset)))
@@ -68,15 +116,7 @@ def train(dataloader, fold, args, fusion_model=None):
     print('Training starts!')
 
     val_records, test_records = None, None
-    if os.path.exists(os.path.join(args.save_dir, f'fold_{fold}', 'checkpoint.pt')) :
-        model.load_state_dict(torch.load(os.path.join(args.save_dir, 'fold_' + str(fold), "checkpoint.pt")))
-        test_records = evaluate(test_loader, model, fp16_scaler, loss_fn, 0, args, fusion)
-        val_records = test_records
-        print(f'Fold {fold} already exists, skipping...')
-        print('################################')
-        print('################################')
-        print('################################')
-        return val_records, test_records
+    # if os.path.exists(os.path.join(args.save_dir, f'fold_{fold}', 'checkpoint.pt')) :
 
     for i in range(args.epochs):
         print('Epoch: {}'.format(i))
@@ -128,12 +168,18 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
     # setup the records
     records = get_records_array(len(train_loader), args.n_classes)
 
+    # Initialize loss function components
+    lambda_param = torch.tensor(0.1, requires_grad=True, device=args.device)
+    mu_param = torch.tensor(0.1, requires_grad=True, device=args.device)
+    cemcl_loss_fn = CrossExpertMemoryContrastiveLoss()
+    info_loss_fn = AdaptiveInfoPreservationLoss(args.input_dim if hasattr(args, 'input_dim') else 512)
+
     for batch_idx, batch in enumerate(train_loader):
         # we use a per iteration lr scheduler
         if batch_idx % args.gc == 0 and args.lr_scheduler == 'cosine':
             adjust_learning_rate(optimizer, batch_idx / len(train_loader) + epoch, args)
 
-        with torch.cuda.amp.autocast(dtype=torch.float16 if args.fp16 else torch.float32):
+        with torch.amp.autocast('cuda', dtype=torch.float16 if args.fp16 else torch.float32):
             # 判断输入结构
             if args.fusion_type == 'none':
                 # 单模型：[B, T, D]
@@ -150,25 +196,19 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
                 
                 logits = model(images, img_coords, pad_mask)
             else:
-                # 多模型：list of [B, T, D]
+                
                 imgs_list = [x.to(args.device, non_blocking=True) for x in batch['imgs_list']]
                 coords_list = [x.to(args.device, non_blocking=True) for x in batch['coords_list']]
                 pad_mask_list = [x.to(args.device, non_blocking=True) for x in batch['pad_mask_list']]
                 label = batch['labels'].to(args.device, non_blocking=True)
                 
-                # Debug inputs
-                for i, imgs in enumerate(imgs_list):
-                    if torch.isnan(imgs).any():
-                        print(f"NaN detected in imgs_list[{i}] at batch {batch_idx}")
-                        imgs_list[i] = torch.nan_to_num(imgs, nan=0.0)
+
                 
                 logits = fusion(imgs_list, coords_list, pad_mask_list)
+                images = imgs_list[0] if imgs_list else torch.zeros(1, 1, 1, device=args.device)
             
             # Validate and debug logits and labels
-            if torch.isnan(logits).any() or torch.isinf(logits).any():
-                print(f"NaN/Inf detected in logits at batch {batch_idx}")
-                print(f"Logits shape: {logits.shape}, stats: mean={logits.mean().item():.4f}, std={logits.std().item():.4f}")
-                logits = torch.nan_to_num(logits, nan=0.0, posinf=1e6, neginf=-1e6)
+
 
             # Prepare labels based on loss function type - handle batch dimension
             if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):
@@ -187,13 +227,24 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
                     print(f"Logits shape: {logits.shape}, n_classes: {args.n_classes}")
                     label = torch.clamp(label, 0, max_class)
                 
-                # Ensure logits have correct number of classes
-                if logits.shape[-1] != args.n_classes:
-                    print(f"ERROR: Logits dimension mismatch at batch {batch_idx}")
-                    print(f"Logits shape: {logits.shape}, expected n_classes: {args.n_classes}")
-                    continue
-                
-            loss = loss_fn(logits, label)
+
+            if args.fusion_type != 'moe':
+                logits = fusion(imgs_list, coords_list, pad_mask_list)
+                expert_outputs = [logits]
+                pooled_features = logits
+                raw_pooled_features = logits.detach()
+            else:
+                logits, expert_outputs, pooled_features, raw_pooled_features = fusion(imgs_list, coords_list, pad_mask_list)
+            #print(logits)
+            classification_loss = loss_fn(logits, label)
+            cemcl_loss = cemcl_loss_fn(expert_outputs)
+
+            # 修复后的调用方式：使用raw_pooled_features作为正样本特征
+            info_loss = info_loss_fn(pooled_features, raw_pooled_features.detach())
+
+
+            
+            loss = classification_loss + lambda_param * cemcl_loss + mu_param * info_loss
             
             # Debug loss
             if torch.isnan(loss) or torch.isinf(loss):
@@ -205,24 +256,24 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
             
             loss /= args.gc
 
-            if fp16_scaler is None:
-                loss.backward()
+        if fp16_scaler is None:
+            loss.backward()
+            # Add gradient clipping
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
+            if (batch_idx + 1) % args.gc == 0:
+                optimizer.step()
+                optimizer.zero_grad()
+        else:
+            fp16_scaler.scale(loss).backward()
+            
+            if (batch_idx + 1) % args.gc == 0:
                 # Add gradient clipping
+                fp16_scaler.unscale_(optimizer)
                 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                # update the parameters with gradient accumulation
-                if (batch_idx + 1) % args.gc == 0:
-                    optimizer.step()
-                    optimizer.zero_grad()
-            else:
-                fp16_scaler.scale(loss).backward()
-                # update the parameters with gradient accumulation
-                if (batch_idx + 1) % args.gc == 0:
-                    # Add gradient clipping
-                    fp16_scaler.unscale_(optimizer)
-                    torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
-                    fp16_scaler.step(optimizer)
-                    fp16_scaler.update()
-                    optimizer.zero_grad()
+                fp16_scaler.step(optimizer)
+                fp16_scaler.update()
+                optimizer.zero_grad()
 
         # update the records
         records['loss'] += loss.item() * args.gc
@@ -230,11 +281,11 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
         if (batch_idx + 1) % 20 == 0:
             time_per_it = (time.time() - start_time) / (batch_idx + 1)
             print('Epoch: {}, Batch: {}, Loss: {:.4f}, LR: {:.4f}, Time: {:.4f} sec/it, Seq len: {:.1f}, Slide ID: {}' \
-                  .format(epoch, batch_idx, records['loss']/batch_idx, optimizer.param_groups[0]['lr'], time_per_it, \
+                  .format(epoch, batch_idx, records['loss']/(batch_idx+1), optimizer.param_groups[0]['lr'], time_per_it, \
                           seq_len/(batch_idx+1), batch['slide_id'][-1] if 'slide_id' in batch else 'None'))
 
     records['loss'] = records['loss'] / len(train_loader)
-    print('Epoch: {}, Loss: {:.4f}'.format(epoch, loss))
+    print('Epoch: {}, Loss: {:.4f}'.format(epoch, records['loss']))
     return records
 
 def chunk_batch(batch, chunk_size):
@@ -269,7 +320,12 @@ def evaluate(loader, model, fp16_scaler, loss_fn, epoch, args, fusion=None):
                 label = batch['labels'].to(args.device, non_blocking=True)
                 slide_id = batch['slide_id']
                 
-                logits = fusion(imgs_list, coords_list, pad_mask_list)
+                # Handle potential tuple return from fusion model
+                fusion_output = fusion(imgs_list, coords_list, pad_mask_list)
+                if isinstance(fusion_output, tuple):
+                    logits = fusion_output[0]  # Take the first element (logits)
+                else:
+                    logits = fusion_output
 
             # Prepare labels with validation - handle batch dimension
             if isinstance(loss_fn, torch.nn.BCEWithLogitsLoss):

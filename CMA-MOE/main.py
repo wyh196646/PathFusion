@@ -185,12 +185,15 @@ if __name__ == '__main__':
             if isinstance(final_layer, nn.Linear) and final_layer.out_features != args.n_classes:
                 print(f"Updating model output layer from {final_layer.out_features} to {args.n_classes} classes")
                 fusion_model.head[-1] = nn.Linear(final_layer.in_features, args.n_classes).to(args.device)
-        
-        fusion_model.n_classes = args.n_classes  # Update model's n_classes attribute
-        
-        # get the dataloader
+
+
+        fusion_model.n_classes = args.n_classes  
+
         train_loader, val_loader, test_loader = get_loader(train_data, val_data, test_data, **vars(args))
-        # start training
+        
+
+# start training
+
         val_records, test_records = train(
             (train_loader, val_loader, test_loader), 
             fold, 
@@ -235,5 +238,5 @@ if __name__ == '__main__':
 
 
 
-#CUDA_VISIBLE_DEVICES=3  python main.py --task_cfg_path "task_configs/subtype/BRACS_COARSE.yaml" --dataset_csv "dataset_csv/subtype/BRACS_COARSE.csv" --root_path "/data4/embedding/BRACS" --pretrain_model_type "slide_level" --tuning_method "MIL" --lr "0.0001" --batch_size "1" --save_dir "./output" --fusion_type "moe"
+#CUDA_VISIBLE_DEVICES=  python main.py --task_cfg_path "task_configs/subtype/BRACS_COARSE.yaml" --dataset_csv "dataset_csv/subtype/BRACS_COARSE.csv" --root_path "/data4/embedding/BRACS" --pretrain_model_type "slide_level" --tuning_method "MIL" --lr "0.0001" --batch_size "1" --save_dir "./output" --fusion_type "moe"
 #python main.py --task_cfg_path "task_configs/subtype/BRACS_COARSE.yaml" --dataset_csv "dataset_csv/subtype/BRACS_COARSE.csv" --root_path "/data4/embedding/BRACS" --pretrain_model_type "slide_level" --tuning_method "MIL" --lr "0.0001" --batch_size "1" --save_dir "./output" --fusion_type "none" --pretrain_model UNI --input_dim 1024

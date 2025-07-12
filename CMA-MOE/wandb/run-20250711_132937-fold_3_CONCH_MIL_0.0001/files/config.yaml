@@ -1,0 +1,179 @@
+_wandb:
+    value:
+        cli_version: 0.19.8
+        m: []
+        python_version: 3.10.16
+        t:
+            "1":
+                - 1
+                - 5
+                - 51
+                - 53
+                - 55
+            "2":
+                - 1
+                - 5
+                - 51
+                - 53
+                - 55
+            "3":
+                - 2
+                - 13
+                - 14
+                - 15
+                - 16
+                - 23
+                - 55
+                - 61
+            "4": 3.10.16
+            "5": 0.19.8
+            "8":
+                - 5
+            "12": 0.19.8
+            "13": linux-x86_64
+attention_heads:
+    value: 4
+base_model_feature_dims:
+    value:
+        - 768
+        - 1024
+        - 768
+base_models:
+    value:
+        - CONCH
+        - UNI
+        - CHIEF_tile
+batch_size:
+    value: 1
+blr:
+    value: 0.004
+dataset_csv:
+    value: dataset_csv/subtype/BCNB_ALN.csv
+device:
+    value: cuda
+drop_path_rate:
+    value: 0
+dropout:
+    value: 0.1
+epochs:
+    value: 25
+exp_code:
+    value: eval_BCNB_ALN
+exp_name:
+    value: ""
+experiment:
+    value: finetune
+feat_layer:
+    value: "11"
+folds:
+    value: 5
+fp16:
+    value: true
+freeze:
+    value: false
+fused_feature_dim:
+    value: 1024
+fusion_type:
+    value: concat
+gc:
+    value: 32
+global_pool:
+    value: false
+input_dim:
+    value: 1536
+latent_dim:
+    value: 768
+layer_decay:
+    value: 0.95
+lr:
+    value: 0.0001
+lr_scheduler:
+    value: cosine
+max_wsi_size:
+    value: 250000
+memory_dim:
+    value: 1024
+memory_slots:
+    value: 10
+mil_model_size:
+    value: small
+mil_type:
+    value: clam_sb
+min_lr:
+    value: 1e-06
+model_arch:
+    value: vit_base
+model_code:
+    value: eval
+model_select:
+    value: val
+n_classes:
+    value: 3
+num_workers:
+    value: 10
+optim:
+    value: adamw
+optim_wd:
+    value: 0.05
+pat_strat:
+    value: false
+pool_method:
+    value: cls_token
+pre_split_dir:
+    value: ""
+pretrain_model:
+    value: CONCH
+pretrain_model_type:
+    value: slide_level
+pretrained:
+    value: ""
+report_to:
+    value: wandb
+return_all_tokens:
+    value: true
+root_path:
+    value: /data4/embedding/BCNB
+save_dir:
+    value: ./output/BCNB_ALN/concat/MIL/0.0001
+seed:
+    value: 0
+split_dir:
+    value: data_split/BCNB_ALN
+split_key:
+    value: slide_id
+task:
+    value: BCNB_ALN
+task_cfg_path:
+    value: task_configs/subtype/BCNB_ALN.yaml
+task_code:
+    value: BCNB_ALN
+task_config:
+    value:
+        add_metrics:
+            - qwk
+        label_dict:
+            N+(>2): 1
+            N+(1-2): 2
+            N0: 0
+        max_tiles: 4000
+        name: BCNB_ALN
+        setting: multi_class
+        shuffle_tiles: true
+task_type:
+    value: multi_class
+tile_size:
+    value: 256
+token_ratio:
+    value: 0
+train_prop:
+    value: 1
+tuning_method:
+    value: MIL
+use_memory:
+    value: false
+val_r:
+    value: 0
+warmup_epochs:
+    value: 0
+weighted_sample:
+    value: false

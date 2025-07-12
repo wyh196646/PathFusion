@@ -15,6 +15,7 @@ from models.ABMIL  import CLAM_MB,CLAM_SB
 from models.model_mil import MIL_fc_mc, MIL_fc
 from models.linear import linear_probe
 from loss.survival_loss import neg_log_partial_likelihood
+import torch.nn.functional as F
 def save_obj(obj, name):
     with open(name, 'wb') as f:
         pickle.dump(obj, f)
@@ -604,3 +605,23 @@ def initiate_linear_model(args):
                 nn.init.zeros_(module.bias)
     
     return model
+
+
+# 新增模块：Adaptive Information Preservation Loss (InfoNCE-based)
+class AdaptiveInfoPreservationLoss(nn.Module):
+    def __init__(self, token_dim):
+        super().__init__()
+        self.g = nn.Linear(token_dim, token_dim)
+        self.h = nn.Linear(token_dim, token_dim)
+        self.tau_mlp = nn.Sequential(
+            nn.Linear(1, 32), nn.ReLU(), nn.Linear(32, 1), nn.Softplus()
+        )
+
+    def forward(self, X, Z):
+        pos = (self.g(X) * self.h(Z)).sum(dim=-1)
+        Z_neg = Z[torch.randperm(Z.size(0))]
+        neg = (self.g(X) * self.h(Z_neg)).sum(dim=-1)
+        entropy = -F.softmax(pos, dim=0).log().mean().unsqueeze(0)
+        tau = self.tau_mlp(entropy)
+        loss = -(pos / tau).mean() + torch.logsumexp(neg / tau, dim=0).mean()
+        return loss
