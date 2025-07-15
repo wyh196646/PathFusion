@@ -229,13 +229,13 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
                 
 
             if args.fusion_type != 'moe':
-                logits = fusion(imgs_list, coords_list, pad_mask_list)
+                #logits = fusion(imgs_list, coords_list, pad_mask_list)
                 expert_outputs = [logits]
                 pooled_features = logits
                 raw_pooled_features = logits.detach()
             else:
                 logits, expert_outputs, pooled_features, raw_pooled_features = fusion(imgs_list, coords_list, pad_mask_list)
-            #print(logits)
+           
             classification_loss = loss_fn(logits, label)
             cemcl_loss = cemcl_loss_fn(expert_outputs)
 
