@@ -244,7 +244,7 @@ def train_one_epoch(train_loader, model, fp16_scaler, optimizer, loss_fn, epoch,
 
 
             
-            loss = classification_loss + lambda_param * cemcl_loss + mu_param * info_loss
+            loss = classification_loss + lambda_param * cemcl_loss #+ mu_param * info_loss
             
             # Debug loss
             if torch.isnan(loss) or torch.isinf(loss):

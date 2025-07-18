@@ -27,7 +27,7 @@ class SlideDatasetForTasks(Dataset):
                  task_config: dict, 
                  slide_key: str='slide_id',
                  split_key: str='pat_id',
-                 base_models: list=['UNI', 'CONCH'],
+                 base_models: list = None,
                  **kwargs
                  ):
         '''
@@ -52,7 +52,10 @@ class SlideDatasetForTasks(Dataset):
         self.split_key = split_key
         self.slide_key = slide_key
         self.task_cfg = task_config
-        self.base_models = base_models
+        
+        # Set base_models early so get_valid_slides can use it
+        self.base_models = base_models if base_models is not None else ['']
+        
         valid_slides = self.get_valid_slides(root_path, data_df[slide_key].values)
         data_df = data_df[data_df[slide_key].isin(valid_slides)]
         self.setup_data(data_df, splits, task_config.get('setting', 'multi_class'))
@@ -64,12 +67,14 @@ class SlideDatasetForTasks(Dataset):
         
 
     def get_valid_slides(self, root_path: str, slides: list) -> list:
-
         valid_slides = []
-        # 多模型模式，self.base_models 必须存在
+        # Ensure base_models is available
+        base_models = getattr(self, "base_models", [''])
+        print(f"Checking slides with base_models: {base_models}")
+        
         for slide_id in slides:
             missing_flag = False
-            for model_name in getattr(self, "base_models", [""]):
+            for model_name in base_models:
                 if model_name == '' or model_name is None:
                     slide_path = os.path.join(root_path, slide_id.replace(".svs", "") + '.h5')
                 else:
@@ -77,8 +82,11 @@ class SlideDatasetForTasks(Dataset):
                 if not os.path.exists(slide_path):
                     print(f'Missing: {slide_path}')
                     missing_flag = True
+                    break  # Early exit if any model is missing
             if not missing_flag:
                 valid_slides.append(str(slide_id))
+        
+        print(f"Found {len(valid_slides)} valid slides out of {len(slides)} total slides")
         return valid_slides
 
     def setup_data(self, df: pd.DataFrame, splits: list, task: str='multi_class'):
@@ -208,8 +216,8 @@ class SlideDataset(SlideDatasetForTasks):
         split_key: str
             The key that specifies the column for splitting the data
         '''
-        super(SlideDataset, self).__init__(data_df, root_path, splits, task_config, slide_key, split_key,base_models, **kwargs)
-        self.base_models = base_models
+        # Pass base_models to parent class
+        super(SlideDataset, self).__init__(data_df, root_path, splits, task_config, slide_key, split_key, base_models=base_models, **kwargs)
         
     def shuffle_data(self, images: torch.Tensor, coords: torch.Tensor) -> tuple:
         '''Shuffle the serialized images and coordinates'''

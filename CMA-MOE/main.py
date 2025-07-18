@@ -69,7 +69,7 @@ if __name__ == '__main__':
             token_dim=token_dim,
             num_tokens=64,  
             n_classes=2,  
-            memory_size=getattr(args, "memory_slots", 32),
+            memory_size=getattr(args, "memory_slots", 32),#origin 32 
             num_memory_layers=getattr(args, "num_memory_layers", 2),
             gamma=getattr(args, "gamma", 0.1),
             mlp_hidden=getattr(args, "mlp_hidden", 256),

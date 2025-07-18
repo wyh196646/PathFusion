@@ -46,16 +46,16 @@ class MultiDimAligner(nn.Module):
             raise ValueError(f"backbone_idx {backbone_idx} out of range, only {len(self.aligners)} aligners available")
         
         # Check for NaN/Inf in input
-        if torch.isnan(x).any() or torch.isinf(x).any():
-            print(f"Warning: NaN/Inf detected in input to aligner {backbone_idx}")
-            x = torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
+        # if torch.isnan(x).any() or torch.isinf(x).any():
+        #     print(f"Warning: NaN/Inf detected in input to aligner {backbone_idx}")
+        #     x = torch.nan_to_num(x, nan=0.0, posinf=1e6, neginf=-1e6)
         
         output = self.aligners[backbone_idx](x)
         
         # Check for NaN/Inf in output
-        if torch.isnan(output).any() or torch.isinf(output).any():
-            print(f"Warning: NaN/Inf detected in aligner {backbone_idx} output")
-            output = torch.nan_to_num(output, nan=0.0, posinf=1e6, neginf=-1e6)
+        # if torch.isnan(output).any() or torch.isinf(output).any():
+        #     print(f"Warning: NaN/Inf detected in aligner {backbone_idx} output")
+        #     output = torch.nan_to_num(output, nan=0.0, posinf=1e6, neginf=-1e6)
         
         return output
 
@@ -177,27 +177,44 @@ class HierarchicalMemoryMoE(nn.Module):
         memory_updates = [torch.zeros_like(memory) for memory in self.memories]
 
         for i, tokens in enumerate(tokens_per_backbone):
+            # Handle batch dimension - squeeze if batch size is 1
+            if tokens.dim() == 3 and tokens.size(0) == 1:
+                tokens = tokens.squeeze(0)  # [1, 64, 1024] -> [64, 1024]
+            
+            # Check for empty tokens
             if tokens.numel() == 0:
-                dummy_output = torch.zeros_like(tokens)
+                dummy_output = torch.zeros(64, self.token_dim, device=tokens.device, dtype=tokens.dtype)
                 expert_outputs.append(dummy_output)
                 continue
 
             tokens = F.layer_norm(tokens, tokens.shape[-1:])
 
             if self.num_experts > 1:
-                context = torch.cat([tokens_per_backbone[j] for j in range(self.num_experts) if j != i], dim=0)
+                # Collect context from other experts
+                context_list = []
+                for j in range(self.num_experts):
+                    if j != i:
+                        other_tokens = tokens_per_backbone[j]
+                        # Handle batch dimension for other tokens too
+                        if other_tokens.dim() == 3 and other_tokens.size(0) == 1:
+                            other_tokens = other_tokens.squeeze(0)
+                        if other_tokens.numel() > 0:
+                            context_list.append(other_tokens)
                 
-                if context.numel() > 0:
+                if context_list:
+                    context = torch.cat(context_list, dim=0)  # [total_tokens, token_dim]
                     context = F.layer_norm(context, context.shape[-1:])
                     
-                    # 优化cross-attention为局部注意力，选最近的64个tokens
+                    # Optimize cross-attention with local attention
                     max_tokens = min(64, context.size(0))
-                    context_subset = context[:max_tokens]
+                    context_subset = context[:max_tokens]  # [max_tokens, token_dim]
+                    
+                    # Ensure tensor shapes are compatible: [64, 1024] @ [1024, max_tokens]
                     temperature = math.sqrt(tokens.size(-1))
-                    cross_attn_logits = tokens @ context_subset.T / temperature
+                    cross_attn_logits = tokens @ context_subset.T / temperature  # [64, max_tokens]
                     cross_attn_logits = torch.clamp(cross_attn_logits, -5, 5)
-                    cross_attn_scores = F.softmax(cross_attn_logits, dim=-1)
-                    cross_attn_output = cross_attn_scores @ context_subset
+                    cross_attn_scores = F.softmax(cross_attn_logits, dim=-1)  # [64, max_tokens]
+                    cross_attn_output = cross_attn_scores @ context_subset  # [64, token_dim]
                     
                     expert_input = tokens + cross_attn_output
                 else:
@@ -205,22 +222,26 @@ class HierarchicalMemoryMoE(nn.Module):
             else:
                 expert_input = tokens
 
-            expert_output = self.experts[i](expert_input)
+            # Process through expert - add batch dimension back for transformer
+            expert_input_batched = expert_input.unsqueeze(0)  # [1, 64, token_dim]
+            expert_output_batched = self.experts[i](expert_input_batched)  # [1, 64, token_dim]
+            expert_output = expert_output_batched.squeeze(0)  # [64, token_dim]
 
+            # Memory operations
             memory_retrievals = []
             for l, memory in enumerate(self.memories):
                 temperature = math.sqrt(self.token_dim)
-                attn_logits = expert_output @ memory.T / temperature
+                attn_logits = expert_output @ memory.T / temperature  # [64, memory_size]
                 attn_logits = torch.clamp(attn_logits, -5, 5)
-                attn_scores = F.softmax(attn_logits, dim=-1)
-                memory_retrieval = attn_scores @ memory
+                attn_scores = F.softmax(attn_logits, dim=-1)  # [64, memory_size]
+                memory_retrieval = attn_scores @ memory  # [64, token_dim]
                 memory_retrievals.append(memory_retrieval)
-                memory_updates[l] += attn_scores.T @ expert_output
+                memory_updates[l] += attn_scores.T @ expert_output  # [memory_size, token_dim]
 
             multi_memory_retrieval = self.memory_agg(torch.cat(memory_retrievals, dim=-1))
             expert_outputs.append(expert_output + multi_memory_retrieval)
 
-        # memory update优化（每隔10步更新一次）
+        # Memory update logic
         if torch.rand(1).item() < 0.1:
             with torch.no_grad():
                 for l in range(self.num_memory_layers):
@@ -228,11 +249,14 @@ class HierarchicalMemoryMoE(nn.Module):
                     update = torch.clamp(update, -0.1, 0.1)
                     self.memories[l].data = (1 - self.gamma) * self.memories[l].data + update
 
-        pooled_expert_outputs = [e.mean(dim=0) for e in expert_outputs]
+        # Global gating
+        pooled_expert_outputs = [e.mean(dim=0) for e in expert_outputs]  # List of [token_dim]
         gate_logits = torch.stack([po @ self.global_gate for po in pooled_expert_outputs], dim=0).squeeze(-1)
         gate_logits = torch.clamp(gate_logits, -5, 5)
-        gate_weights = F.softmax(gate_logits, dim=0)
-        fused_output = sum(w * e for w, e in zip(gate_weights, expert_outputs))
+        gate_weights = F.softmax(gate_logits, dim=0)  # [num_experts]
+        
+        # Weighted fusion
+        fused_output = sum(w * e for w, e in zip(gate_weights, expert_outputs))  # [64, token_dim]
 
         return fused_output, gate_weights
 
@@ -273,10 +297,10 @@ class  MultiModelFusionSystem(nn.Module):
         if len(base_model_feature_dims) != num_experts:
             raise ValueError(f"base_model_feature_dims length {len(base_model_feature_dims)} must match num_experts {num_experts}")
         
-        # 1. 维度对齐器 - 预先定义所有维度转换器
+    
         self.aligner = MultiDimAligner(input_dims=base_model_feature_dims, D_target=token_dim)
         
-        # 2. 序列压缩器 - 每个基础模型一个
+
         self.compressors = nn.ModuleList([
             LSTCWA(dim=token_dim, num_tokens=num_tokens, 
                    win_size=win_size, stride=stride)
@@ -316,40 +340,59 @@ class  MultiModelFusionSystem(nn.Module):
         batch_logits = []
         batch_expert_outputs = []
         batch_pooled_features = []
-        batch_raw_pooled_features = []  # 新增，存储原始特征池化后的结果
+        batch_raw_pooled_features = []
 
         for b in range(B):
             sample_feats_list = [feats[b] for feats in feats_list]
 
             compressed_tokens = []
-            raw_pooled = []  # 存储每个backbone原始特征池化后的向量
+            raw_pooled = []
 
             for i, feats in enumerate(sample_feats_list):
                 if feats.numel() == 0:
-                    dummy_tokens = torch.zeros(self.num_tokens, self.token_dim, device=feats.device, dtype=feats.dtype)
+                    dummy_tokens = torch.zeros(1, self.num_tokens, self.token_dim, device=feats.device, dtype=feats.dtype)
                     compressed_tokens.append(dummy_tokens)
                     raw_pooled.append(torch.zeros(self.token_dim, device=feats.device))
                     continue
 
                 aligned_feats = self.aligner(feats, backbone_idx=i)
-                pooled_raw = aligned_feats.mean(dim=0)  # 原始特征池化（关键）
+                if coords_list is not None and pad_mask_list is not None:
+                    coords = coords_list[i][b]
+                    pad_mask = pad_mask_list[i][b]
+                else:
+                    coords = torch.zeros_like(aligned_feats[..., :2])
+                    pad_mask = torch.zeros(aligned_feats.shape[:-1], dtype=torch.bool, device=feats.device)
+                    
+                pooled_raw = aligned_feats.mean(dim=0)
                 raw_pooled.append(pooled_raw)
-                compressed = pooled_raw.unsqueeze(0).repeat(self.num_tokens, 1)
-                compressed_tokens.append(compressed)
+                
+                # LSTCWA compression - ensure proper batch handling
+                compressed = self.compressors[i](aligned_feats.unsqueeze(0), coords.unsqueeze(0), pad_mask.unsqueeze(0))
+                compressed_tokens.append(compressed)  # Keep as [1, 64, token_dim]
 
             if self.fusion_type == "moe":
                 fused_output, gate_weights = self.fusion(compressed_tokens)
+                # fused_output should be [64, token_dim] after the fix
             else:
-                tokens_cat = torch.cat(compressed_tokens, dim=-1)
+                # For non-MoE fusion, work with raw pooled features
+                tokens_cat = torch.cat(raw_pooled, dim=-1)
                 fused_output = self.fusion(tokens_cat)
+                # Ensure fused_output has the right shape for pooling
+                if fused_output.dim() == 1:
+                    fused_output = fused_output.unsqueeze(0)  # [token_dim] -> [1, token_dim]
 
-            pooled_features = fused_output.mean(dim=0)
+            # Pool the fused output
+            if fused_output.dim() == 2:
+                pooled_features = fused_output.mean(dim=0)  # [num_tokens, token_dim] -> [token_dim]
+            else:
+                pooled_features = fused_output  # Already pooled
+                
             logits = self.mil_head(pooled_features)
 
             batch_logits.append(logits)
             batch_expert_outputs.append(fused_output)
             batch_pooled_features.append(pooled_features)
-            batch_raw_pooled_features.append(torch.stack(raw_pooled).mean(dim=0))  # 原始特征池化再平均
+            batch_raw_pooled_features.append(torch.stack(raw_pooled).mean(dim=0))
 
         batch_logits = torch.stack(batch_logits, 0)
         batch_pooled_features = torch.stack(batch_pooled_features, 0)
@@ -517,34 +560,3 @@ class SimpleFusionBaseline(nn.Module):
         batch_logits = torch.stack(batch_logits, 0)  # [B, n_classes]
         return batch_logits
 
-# 新增模块：Cross-Expert Memory Contrastive Loss (CEMCL)
-class CrossExpertMemoryContrastiveLoss(nn.Module):
-    def __init__(self, temperature=0.1):
-        super().__init__()
-        self.temperature = temperature
-
-    def forward(self, expert_outputs):
-        loss = 0
-        M = len(expert_outputs)
-        for m in range(M):
-            pos = expert_outputs[m]
-            neg = torch.cat([expert_outputs[n] for n in range(M) if n != m], dim=0)
-            pos_sim = torch.exp((pos @ pos.T) / self.temperature)
-            neg_sim = torch.exp((pos @ neg.T) / self.temperature).sum(dim=-1, keepdim=True)
-            loss += -torch.log(pos_sim / (neg_sim + 1e-8)).mean()
-        return loss / M
-
-# 新增模块：Spatial-Aware Memory Routing (SAMR)
-class SpatialAwareMemory(nn.Module):
-    def __init__(self, dim, memory_size):
-        super().__init__()
-        self.memory = nn.Parameter(torch.randn(memory_size, dim))
-        self.pos_mlp = nn.Sequential(
-            nn.Linear(2, dim), nn.ReLU(), nn.Linear(dim, dim)
-        )
-
-    def forward(self, features, coords):
-        spatial_emb = self.pos_mlp(coords.mean(dim=0, keepdim=True))
-        z_spatial = features + spatial_emb
-        attn = F.softmax((z_spatial @ self.memory.T) / math.sqrt(features.size(-1)), dim=-1)
-        return attn @ self.memory

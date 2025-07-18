@@ -21,31 +21,31 @@ def generate_commands(task_configs):
     # Multi-model fusion configurations
     fusion_configs = [
         {'fusion_type': 'moe', 'lr': '0.0001'},
-        {'fusion_type': 'concat', 'lr': '0.0001'},
-        {'fusion_type': 'self_attention', 'lr': '0.0001'},
-        {'fusion_type': 'cross_attention', 'lr': '0.0001'},
+        # {'fusion_type': 'concat', 'lr': '0.0001'},
+        # {'fusion_type': 'self_attention', 'lr': '0.0001'},
+        # {'fusion_type': 'cross_attention', 'lr': '0.0001'},
     ]
     
     # Single model configurations
     single_model_configs = [
-        {'pretrain_model': 'UNI', 'input_dim': '1024', 'lr': '0.001'},
-        {'pretrain_model': 'CHIEF', 'input_dim': '768', 'lr': '0.001'},
-        {'pretrain_model': 'Gigapath', 'input_dim': '768', 'lr': '0.001'},
-        {'pretrain_model': 'Virchow', 'input_dim': '2560', 'lr': '0.001'},
-        {'pretrain_model': 'CONCH', 'input_dim': '768', 'lr': '0.001'},
-        {'pretrain_model': 'PRISM', 'input_dim': '1280', 'lr': '0.001'},
+        # {'pretrain_model': 'UNI', 'input_dim': '1024', 'lr': '0.001'},
+        # {'pretrain_model': 'CHIEF', 'input_dim': '768', 'lr': '0.001'},
+        # {'pretrain_model': 'Gigapath', 'input_dim': '768', 'lr': '0.001'},
+        # {'pretrain_model': 'Virchow', 'input_dim': '2560', 'lr': '0.001'},
+        # {'pretrain_model': 'CONCH', 'input_dim': '768', 'lr': '0.001'},
+        # {'pretrain_model': 'PRISM', 'input_dim': '1280', 'lr': '0.001'},
     ]
     
     # Multi-model groups
     model_groups = [
+        # {
+        #     'base_models': ['CONCH', 'UNI', 'CHIEF_tile'],
+        #     'base_model_feature_dims': [768, 1024, 768],
+        #     'save_dir': './output'
+        # },
         {
-            'base_models': ['CONCH', 'UNI', 'CHIEF_tile'],
-            'base_model_feature_dims': [768, 1024, 768],
-            'save_dir': './output'
-        },
-        {
-            'base_models': ['Gigapath_tile', 'Virchow'],
-            'base_model_feature_dims': [1536, 2560],
+            'base_models': ['Gigapath_tile', 'UNI'],
+            'base_model_feature_dims': [1536, 1024],
             'save_dir': './output_2'
         }
     ]
